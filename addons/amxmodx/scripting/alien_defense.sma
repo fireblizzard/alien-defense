@@ -18,7 +18,7 @@
 
 #define MAX_INT 2147483647
 
-#define MAX_ENTITIES 1024	// I'd say it was 512, but I've seen entities with an index higher than 512, giving me out of bounds error
+#define MAX_ENTITIES 1060 // https://forums.alliedmods.net/showpost.php?p=657925&postcount=2
 
 #define WAYPOINT_DISTANCE_THRESHOLD			20.0
 #define MOVEMENT_BLOCKED_THRESHOLD			1.0
@@ -51,16 +51,16 @@
 #define WP_NEXUS_ATTACK_RANGED	(1<<7)	// good position to perform ranged attacks to the Nexus
 
 #define DIFFICULTY_SURVIVAL		0x00	// Logarithmic multiplier for stats, unlimited rounds
-#define DIFFICULTY_TEST			0x01	// -50% stats, 5 rounds
-#define DIFFICULTY_VERY_EASY	0x02	// -30% stats, 10 rounds
-#define DIFFICULTY_EASY			0x03	// -15% stats, 10 rounds
+#define DIFFICULTY_TEST			0x01	// -60% stats, 5 rounds
+#define DIFFICULTY_VERY_EASY	0x02	// -40% stats, 10 rounds
+#define DIFFICULTY_EASY			0x03	// -20% stats, 10 rounds
 #define DIFFICULTY_NORMAL		0x04	// Normal stats, 15 rounds
-#define DIFFICULTY_HARD			0x05	// +15% stats, 20 rounds
-#define DIFFICULTY_VERY_HARD	0x06	// +30% stats, 25 rounds
-#define DIFFICULTY_ELITE		0x07	// +50% stats, 30 rounds
-#define DIFFICULTY_INSANE		0x08	// +75% stats, 50 rounds
-#define DIFFICULTY_NIGHTMARE	0x09	// +100% stats, 75 rounds
-#define DIFFICULTY_IMPOSSIBLE	0x10	// +200% stats, 100 rounds
+#define DIFFICULTY_HARD			0x05	// +20% stats, 20 rounds
+#define DIFFICULTY_VERY_HARD	0x06	// +40% stats, 25 rounds
+#define DIFFICULTY_ELITE		0x07	// +80% stats, 30 rounds
+#define DIFFICULTY_INSANE		0x08	// +150% stats, 40 rounds
+#define DIFFICULTY_NIGHTMARE	0x09	// +200% stats, 50 rounds
+#define DIFFICULTY_IMPOSSIBLE	0x10	// +400% stats, 60 rounds
 
 #define DEFAULT_DIFFICULTY		DIFFICULTY_NORMAL
 
@@ -167,6 +167,51 @@
 	monster_zombie				8=attack, 10=walk, 22=attack, 24=push
 */
 
+enum _:WAYPOINT
+{
+	WP_ID[17],				// unique identifier, e.g.: "wp29"
+	Float:WP_ORIGIN[3],		// waypoint location
+	WP_WEIGHT_NEXUS,		// the nearer by Nexus, the higher weight; especially important for land monsters to find the path correctly
+	WP_WEIGHT_TAKE_COVER,	// how good is it for taking cover
+	WP_FLAGS,				// different properties a waypoint may have (see WP_ defines)
+	Array:WP_NEIGHBOURS		// an array where other waypoints identifiers are put, indicating you can access those from this waypoint
+}
+
+enum _:ENTITY_STATE
+{
+	Float:ENT_GAMETIME,
+	Float:ENT_ORIGIN[3],
+	Float:ENT_ANGLES[3],
+	Float:ENT_VELOCITY[3],
+	Float:ENT_GRAVITY_VELOCITY,
+	ENT_FLAGS
+}
+
+enum _:MONSTER_DATA
+{
+	MONSTER_ENTITY_NAME[32],
+	MONSTER_MODEL[64],
+	Float:MONSTER_DAMAGE,
+	Float:MONSTER_HEALTH,
+	Float:MONSTER_SPEED,
+	bool:MONSTER_IS_CUSTOM,
+	bool:MONSTER_IS_AIRBORNE
+}
+
+enum _:DIFFICULTY
+{
+	Float:DIFFICULTY_STATS_MULTIPLIER,
+	DIFFICULTY_ROUNDS
+}
+
+enum
+{
+	ZOMBIE_ATTACK1_SEQ	= 8,
+	ZOMBIE_ATTACK2_SEQ	= 22,
+	ZOMBIE_PUSH_SEQ		= 24,
+	ZOMBIE_WALK_SEQ		= 10
+}
+
 new const g_GameStateString[][] =
 {
 	"idle",
@@ -176,7 +221,7 @@ new const g_GameStateString[][] =
 	"victory"
 };
 
-new Trie:g_Gibs; // model_path -> [model_number, material]; e.g.: models/woodgibs.mdl" -> [2, BREAK_WOOD]
+new Trie:g_Gibs; // model_path -> [model_number, material]; e.g.: "models/woodgibs.mdl" -> [2, BREAK_WOOD]
 
 new const g_GibModels[][] =
 {
@@ -472,7 +517,7 @@ new const g_Modes[][] = {
 	"competitive"
 };
 
-new Float:g_DifficultyStats[][2] = {
+new g_DifficultyStats[][DIFFICULTY] = {
 	{0.0, MAX_INT},
 	{0.4, 5},
 	{0.6, 10},
@@ -485,42 +530,6 @@ new Float:g_DifficultyStats[][2] = {
 	{3.0, 50},
 	{5.0, 60}
 };
-
-enum _:WAYPOINT {
-	WP_ID[17],				// unique identifier, e.g.: "wp29"
-	Float:WP_ORIGIN[3],		// waypoint location
-	WP_WEIGHT_NEXUS,		// the nearer by Nexus, the higher weight; especially important for land monsters to find the path correctly
-	WP_WEIGHT_TAKE_COVER,	// how good is it for taking cover
-	WP_FLAGS,				// different properties a waypoint may have (see WP_ defines)
-	Array:WP_NEIGHBOURS		// an array where other waypoints identifiers are put, indicating you can access those from this waypoint
-}
-
-enum _:ENTITY_STATE {
-	Float:ENT_GAMETIME,
-	Float:ENT_ORIGIN[3],
-	Float:ENT_ANGLES[3],
-	Float:ENT_VELOCITY[3],
-	Float:ENT_GRAVITY_VELOCITY,
-	ENT_FLAGS
-}
-
-enum _:MONSTER_DATA {
-	MONSTER_ENTITY_NAME[32],
-	MONSTER_MODEL[64],
-	Float:MONSTER_DAMAGE,
-	Float:MONSTER_HEALTH,
-	Float:MONSTER_SPEED,
-	bool:MONSTER_IS_CUSTOM,
-	bool:MONSTER_IS_AIRBORNE
-}
-
-enum
-{
-	ZOMBIE_ATTACK1_SEQ	= 8,
-	ZOMBIE_ATTACK2_SEQ	= 22,
-	ZOMBIE_PUSH_SEQ		= 24,
-	ZOMBIE_WALK_SEQ		= 10
-}
 
 new const PLUGIN[]					= "Alien Defense";
 new const VERSION[]					= "0.8.0-alpha";
@@ -650,7 +659,7 @@ public plugin_init()
 
 	new ag_gamemode[32];
 	get_cvar_string("sv_ag_gamemode", ag_gamemode, charsmax(ag_gamemode));
-	if (ag_gamemode[0] && !(equali(ag_gamemode, "aliendefense") || equali(ag_gamemode, "aliendef") || equali(ag_gamemode, "adf")))
+	if (ag_gamemode[0] && !(equali(ag_gamemode, "aliendefense") || equali(ag_gamemode, "adf")))
 	{
 		server_print("[%s] The %s plugin can only be run in the \"adf\" gamemode.", PLUGIN_TAG, PLUGIN);
 		pause("ad");
@@ -679,21 +688,11 @@ public plugin_init()
 	// HL/AG messages
 	new msgCountdown	= get_user_msgid("Countdown");
 	new msgSettings		= get_user_msgid("Settings");
-	new msgNextmap		= get_user_msgid("Nextmap");
 	new msgVote			= get_user_msgid("Vote");
-	new msgAuthId		= get_user_msgid("AuthID");
-	new msgMapList		= get_user_msgid("MapList");
-	new msgDamage		= get_user_msgid("Damage");
-	new msgGameMode		= get_user_msgid("GameMode");
 
 	register_message(msgCountdown,	"FwMsgCountdown");
 	register_message(msgSettings,	"FwMsgSettings");
-	register_message(msgNextmap,	"FwMsgNextmap");
 	register_message(msgVote,		"FwMsgVote");
-	register_message(msgAuthId,		"FwMsgAuthId");
-	register_message(msgMapList,	"FwMsgMapList");
-	register_message(msgDamage,		"FwMsgDamage");
-	register_message(msgGameMode,	"FwMsgGameMode");
 
 	configureMonsters();
 
@@ -804,8 +803,7 @@ public plugin_cfg()
 
 	g_MonstersAlive = ArrayCreate(1);
 
-	configureNexus();
-	set_pev(g_Nexus, pev_takedamage, DAMAGE_NO);
+	initNexus();
 
 	loadWaypoints();
 	loadRounds();
@@ -844,7 +842,7 @@ getMapWaypoints(ent, kvd)
 	new keyName[32];
 	get_kvd(kvd, KV_KeyName, keyName, charsmax(keyName));
 
-	// TODO improve this code
+	// TODO: try to improve this code, doesn't seem rightly - to go like it
 	if (equal(keyName, "wp_id"))
 	{
 		new value[32], Float:origin[3];
@@ -912,7 +910,6 @@ configureServer()
 	server_print("[%s] Setting commands...", PLUGIN_TAG);
 
 	server_cmd("mp_allowmonsters 1"); // necessary for the default AI of HL monsters to work, and for correct hitboxes
-	//server_cmd("skill 2"); // defines how much damage monsters deal normally, from 1 to 3 (low to high) // TODO may have to deplend on ADF difficulty level
 	//server_cmd("mp_timelimit 0"); // commented out as it won't let players do agstart if no timelimit set
 	//server_cmd("mp_teamplay 131072");
 	server_cmd("mp_teamplay 1");
@@ -1009,6 +1006,7 @@ loadWaypoints()
 	}
 
 	new waypointsFilePath[256];
+	// TODO: stop hardcoding map waypoints
 	if (equali(g_Map, "ag_defense_a2", 13) || equali(g_Map, "ag_defense_a3", 13))
 		formatex(waypointsFilePath, charsmax(waypointsFilePath), "%s/%s", g_ConfigsDir, WAYPOINTS_FILENAME);
 	else
@@ -1120,8 +1118,7 @@ loadRounds()
 	server_print("[%s] Loaded %d rounds from %s", PLUGIN_TAG, round, roundsFilePath);
 }
 
-configureNexus()
-{
+initNexus() {
 	g_Nexus = find_ent_by_tname(0, NEXUS_NAME);
 	if (!pev_valid(g_Nexus))
 	{
@@ -1140,7 +1137,7 @@ configureNexus()
 		return;
 	}
 
-	set_pev(g_Nexus, pev_takedamage, DAMAGE_YES); 
+	set_pev(g_Nexus, pev_takedamage, DAMAGE_NO);
 	set_pev(g_Nexus, pev_max_health, 10000.0);
 	set_pev(g_Nexus, pev_health, get_pcvar_float(pcvar_ad_nexus_health));
 
@@ -1208,13 +1205,6 @@ public FwMsgSettings(id, dest, ent)
 	server_print("[%.4f] Settings::id=%d,dest=%d,ent=%d,isMatch=%d", get_gametime(), id, dest, ent, isMatch);
 }
 
-public FwMsgNextmap(id)
-{
-	static mapName[32];
-	get_msg_arg_string(1, mapName, charsmax(mapName));
-	server_print("[%.4f] Nextmap::id=%d,map=%s", get_gametime(), id, mapName);
-}
-
 public FwMsgVote(id)
 {
 	static status, yes, no, undecided, setting[32], value[32], caller[32];
@@ -1261,40 +1251,9 @@ public FwMsgVote(id)
 		ucfirst(difficulty);
 		client_print(0, print_chat, "[%s] Starting a %s game. Have fun!", PLUGIN_TAG, difficulty);
 
-		server_print("Vote:AgStart::value=%s,difficulty=%d,mode=%d", value, g_CurrDifficulty, g_CurrMode);
+		server_print("[%.4f] Vote:AgStart::value=%s,difficulty=%d,mode=%d", get_gametime(), value, g_CurrDifficulty, g_CurrMode);
 	}
 
-}
-
-public FwMsgAuthId(id, dest, ent)
-{
-	static playerId, authId[32];
-	playerId = get_msg_arg_int(1);
-	get_msg_arg_string(2, authId, charsmax(authId));
-	server_print("[%.4f] AuthId::id=%d,dest=%d,ent=%d,pid=%.1f,authid=%s", get_gametime(), id, dest, ent, playerId, authId);
-}
-
-public FwMsgMapList(id)
-{
-	static arg1, mapList[32];
-	arg1 = get_msg_arg_int(1);
-	get_msg_arg_string(2, mapList, charsmax(mapList));
-	server_print("[%.4f] MapList::id=%d,arg1=%d,mapList=%s", get_gametime(), id, arg1, mapList);
-}
-
-public FwMsgDamage(id, dest, ent)
-{
-	static hp, ap;
-	hp = get_msg_arg_int(1);
-	ap = get_msg_arg_int(2);
-	server_print("[%.4f] Damage::id=%d,dest=%d,ent=%d,hp=%d,ap=%d", get_gametime(), id, dest, ent, hp, ap);
-}
-
-public FwMsgGameMode(id, dest, ent)
-{
-	static teamplay;
-	teamplay = get_msg_arg_int(1);
-	server_print("[%.4f] GameMode::id=%d,dest=%d,ent=%d,teamplay=%d", get_gametime(), id, dest, ent, teamplay);
 }
 
 public FwGetGameDescriptionPre()
@@ -1330,7 +1289,7 @@ public FwBreakableTakeDamagePre(id, attackerWeapon, attacker, Float:damage, dama
 				// TODO: change this when monsters have enough AI to attack the nexus
 				new playerName[32];
 				get_user_name(attacker, playerName, charsmax(playerName));
-				console_print(0, "The Nexus has been destroyed by %s", playerName);
+				server_print("The Nexus has been destroyed by %s", playerName);
 				nexusDestroyed();
 				return HAM_SUPERCEDE;
 			}
@@ -1387,7 +1346,7 @@ public FwBreakableDestroyedPre(id, attacker, shouldGib)
 {
 	if (id == g_Nexus)
 	{
-		console_print(0, "The Nexus has been destroyed");
+		server_print("The Nexus has been destroyed");
 		nexusDestroyed();
 
 		return HAM_SUPERCEDE;
@@ -1498,7 +1457,7 @@ public FwThrowSatchel2Pre(weaponId)
 		// Avoid throwing the satchel
 		return HAM_SUPERCEDE;
 	}
-	console_print(0, "[%s] There are [%d/%d] satchels in the map now.", PLUGIN_TAG, satchelCount+1, maxSatchels);
+	server_print("[%s] There are [%d/%d] satchels in the map now.", PLUGIN_TAG, satchelCount+1, maxSatchels);
 
 	return HAM_HANDLED; // to avoid losing satchels placed on the map upon death
 }
@@ -1668,7 +1627,7 @@ public CmdSpawnBot(id, level, cid)
 	return PLUGIN_HANDLED;
 }
 
-public CmdStart(id, level, cid)
+public CmdStart(id)
 {
 	new arg1[32], arg2[32], fullArg[64];
 	read_argv(1, arg1, charsmax(arg1)); // e.g.: very
@@ -1698,8 +1657,6 @@ public CmdStart(id, level, cid)
 	else
 		client_cmd(id, "agstart %s", fullArg);
 
-	//CmdAgStart(id);
-
 	return PLUGIN_HANDLED;
 }
 
@@ -1716,8 +1673,11 @@ public CmdUnsatchel(id)
 	return PLUGIN_HANDLED;
 }
 
-public CmdDumpEntities(id)
+public CmdDumpEntities(id, level, cid)
 {
+	if (!cmd_access(id, level, cid, 1))
+		return PLUGIN_CONTINUE;
+
 	new dumpPath[256];
 	formatex(dumpPath, charsmax(dumpPath), "%s/dump_%s_%d_%d.log",
 		g_ConfigsDir, g_Map, g_CurrRound, floatround((get_gametime() * 1000.0), floatround_round));
@@ -1725,7 +1685,7 @@ public CmdDumpEntities(id)
 	new file = fopen(dumpPath, "wt");
 	if (!file)
 	{
-		console_print(id, "Failed to write dump log file (\"%s\")", dumpPath);
+		server_print("Failed to write dump log file (\"%s\")", dumpPath);
 		return PLUGIN_HANDLED;
 	}
 
@@ -1898,7 +1858,7 @@ public CmdCheckGameStatus(id, level, cid)
 
 	console_print(id, "[%s] Current game info:", PLUGIN_TAG);
 	console_print(id, " - Game state: %s", g_GameStateString[g_GameState]);
-	console_print(id, " - Round: %d / %d", g_CurrRound, g_DifficultyStats[g_CurrDifficulty][1]);
+	console_print(id, " - Round: %d / %d", g_CurrRound, g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS]);
 	console_print(id, " - Difficulty: %d", g_CurrDifficulty);
 	console_print(id, " - Current time: %.3fs", get_gametime());
 	console_print(id, " - Round end time: %.3fs", g_RoundEndTime);
@@ -2037,7 +1997,7 @@ public CmdTestRound(id)
 		g_CurrRound = 1;
 
 	g_CurrDifficulty = DIFFICULTY_TEST;
-	new maxRound = g_DifficultyStats[g_CurrDifficulty][1];
+	new maxRound = g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS];
 
 	if (g_CurrRound > maxRound)
 		g_CurrRound = maxRound;
@@ -2056,7 +2016,7 @@ public CmdTestRound(id)
 		// There may not be enough spawnpoints for all the monsters in this round, so we divide them into different waves,
 		// with some time between waves so they spawn and move on without blocking the spawnpoints for the next wave of monsters
 		new spawnWaves = floatround(float(monstersAmt) / float(MAX_SPAWNPOINTS), floatround_ceil);
-		// TODO improve this, I don't like some many tasks being spawned at once
+		// TODO: improve this, I don't like some many tasks being spawned at once
 		for (new i = 0; i < spawnWaves; i++)
 			set_task(i * get_pcvar_float(pcvar_ad_time_between_waves), "SpawnMonstersWave", TASKID_SPAWN_MONSTER_WAVE + i);
 	}
@@ -2115,7 +2075,7 @@ public CmdRemoveGarbage(id)
 					}
 					else
 					{
-						new entityRemovalLifeThreshold = 120.0;
+						new Float:entityRemovalLifeThreshold = 120.0;
 						new Float:life = get_gametime() - g_GarbageSpawnTime[i];
 						if (equal(className, "env_sprite"))
 							entityRemovalLifeThreshold = 360.0;
@@ -2199,12 +2159,12 @@ public StartRound(taskId)
 		new spawnWaves = floatround(float(monstersAmt) / float(MAX_SPAWNPOINTS), floatround_ceil);
 		new Float:timeBetweenWaves = get_pcvar_float(pcvar_ad_time_between_waves);
 
-		// TODO improve this, I don't like that many tasks being spawned at once
+		// TODO: improve this, I don't like that many tasks being spawned at once
 		new i;
 		for (i = 0; i < spawnWaves; i++)
 			set_task(i * timeBetweenWaves, "SpawnMonstersWave", TASKID_SPAWN_MONSTER_WAVE + i);
 
-		new totalRounds = g_DifficultyStats[g_CurrDifficulty][1];
+		new totalRounds = g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS];
 		server_print("current round: %d", g_CurrRound);
 		if (g_CurrRound < totalRounds)
 		{
@@ -2245,7 +2205,7 @@ removeGarbage()
 
 			if (equal(className, "env_sprite")
 				|| equal(className, "beam")
-				|| equal(className, "weaponbox")) // TODO make a cvar to decide whether to remove weaponbox or not
+				|| equal(className, "weaponbox")) // TODO: make a cvar to decide whether to remove weaponbox or not
 				remove_entity(i);
 		}
 	}
@@ -2267,7 +2227,7 @@ getPlayingPlayersNum()
 	return result;
 }
 
-// TODO refactor functions
+// TODO: refactor functions
 public UnstuckEntity(taskId)
 {
 	new id = taskId - TASKID_UNSTUCK_ENTITY;
@@ -2291,7 +2251,7 @@ public UnstuckEntity(taskId)
 	}
 }
 
-// TODO refactor functions
+// TODO: refactor functions
 public UnstuckEntityWithMonster(taskId)
 {
 	new id = taskId - TASKID_UNSTUCK_ENTITY_WITH_MONSTER;
@@ -2373,7 +2333,7 @@ public FwInfoThinkPre(id)
 		if (!get_pcvar_num(pcvar_sv_ag_match_running))
 		{
 			// Game has been aborted
-			console_print(0, "Game aborted");
+			server_print("Game aborted");
 			server_cmd("agabort");
 			server_exec();
 			g_GameState = GAME_ABORTED;
@@ -2381,7 +2341,7 @@ public FwInfoThinkPre(id)
 		}
 		else
 		{
-			new maxRound = g_DifficultyStats[g_CurrDifficulty][1];
+			new maxRound = g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS];
 			if (g_CurrRound == maxRound && ArraySize(g_MonstersAlive) == 0 && g_RoundEndTime <= get_gametime())
 			{
 				gameWon();
@@ -2394,60 +2354,28 @@ public FwInfoThinkPre(id)
 
 public FwCheckerThinkPre(id)
 {
-	// HACKHACK!!! Checks that the monsters array has valid monsters,
+	// Checks that the monsters array has valid monsters,
 	// because sometimes upon death or reaching nexus they don't get removed
 	new Array:monstersToBeRemoved = ArrayCreate(1, 8);
 	for (new i = 0; i < ArraySize(g_MonstersAlive); i++)
 	{
+		new className[32];
 		new monster = ArrayGetCell(g_MonstersAlive, i);
-		/*if (!pev_valid(monster))
-		{
-			// Process the removal later, as modifying the array that's being iterated may lead to errors
-			ArrayPushCell(monstersToBeRemoved, i);
-			server_print("[%s] Data integrity error: Removing a monster (#%d) that wasn't properly removed before...", PLUGIN_TAG, monster);
-		}
-		else*/
-		{
-			new className[32];
-			pev(monster, pev_classname, className, charsmax(className));
+		pev(monster, pev_classname, className, charsmax(className));
 
-			//new aux[MONSTER_DATA];
-			//if (!TrieGetArray(g_MonsterData, className, aux, MONSTER_DATA))
-			if (!TrieKeyExists(g_MonsterData, className))
-			{
-				// It's not any of the monsters that we use in this game, so get the fuck out of here non-monster thingy
-				server_print("[%s] Data integrity error: #%d %s is not an AD-registered monster", PLUGIN_TAG, monster, className);
-				//ArrayPushCell(monstersToBeRemoved, i);
-				//server_print("[%s] Data integrity error: Removing a non-monster thingy (#%d) that who knows how it ended up here...", PLUGIN_TAG, monster);
-			}
-		}
-	}
-	/*
-	// Remove them in the reverse order, from higher to lower index
-	// because the array will move the higher indexes 1 position lower upon removal
-	for (new i = ArraySize(monstersToBeRemoved) - 1; i >= 0; i--)
-	{
-		new index = ArrayGetCell(monstersToBeRemoved, i);
-
-		// I dunno, maybe unnecessary, but make sure that the monster to be removed is really not valid
-		// and avoid removing ones that are still alive
-		new monster = ArrayGetCell(g_MonstersAlive, index);
-		if (pev_valid(monster))
+		if (!TrieKeyExists(g_MonsterData, className))
 		{
-			new msg[256];
-			formatex(msg, charsmax(msg), "[%s] Data integrity error: Tried to remove a monster (#%d) that was alive, but didn't need to be removed.", PLUGIN_TAG, monster);
-			add(msg, charsmax(msg), "The removal has been canceled, but this is not a solution... this has to be tracked down and fixed properly.");
-			server_print(msg);
-			continue;
+			// It's not any of the monsters that we use in this game, so get the fuck out of here non-monster thingy
+			server_print("[%s] Data integrity error: #%d %s is not an AD-registered monster", PLUGIN_TAG, monster, className);
 		}
-		//ArrayDeleteItem(g_MonstersAlive, index);
-		removeMonster(monster);
+		
 	}
-	*/
+
 	set_pev(id, pev_nextthink, get_gametime() + 3.0);
 	return HAM_HANDLED;
 }
 
+// TODO: try and refactor this function
 getNextWaypoint(curr[WAYPOINT], next[WAYPOINT], wpToAvoid[]="")
 {
 	if (!curr[WP_NEIGHBOURS])
@@ -2461,9 +2389,9 @@ getNextWaypoint(curr[WAYPOINT], next[WAYPOINT], wpToAvoid[]="")
 	// 1. Get the smallest weight to calculate everything based on new weights starting from 1
 	for (new i = 0; i < ArraySize(neighbours); i++)
 	{
-		// TODO take into account land/fly when there are flying monsters and airborne waypoints
-		// TODO take into account WEIGHT_TAKE_COVER
-		// TODO check what other things are missing here
+		// TODO: take into account land/fly when there are flying monsters and airborne waypoints
+		// TODO: take into account WEIGHT_TAKE_COVER
+		// TODO: check what other things are missing here
 		new id[17], neighbour[WAYPOINT];
 		ArrayGetString(neighbours, i, id, charsmax(id));
 		if (TrieGetArray(g_Waypoints, id, neighbour, WAYPOINT))
@@ -2511,7 +2439,7 @@ getNextWaypoint(curr[WAYPOINT], next[WAYPOINT], wpToAvoid[]="")
 		new neighbour[WAYPOINT];
 		ArrayGetArray(neighbourWaypoints, i, neighbour);
 
-		// TODO refactor, DRY
+		// TODO: refactor, DRY
 		new weightNexus = (neighbour[WP_WEIGHT_NEXUS] - smallestWeight) + 1;
 		if (neighbour[WP_WEIGHT_NEXUS] == biggestWeight)
 			weightNexus += 10;
@@ -2520,7 +2448,7 @@ getNextWaypoint(curr[WAYPOINT], next[WAYPOINT], wpToAvoid[]="")
 		chancesSum += chance;
 		chance = chancesSum; // this is because later we will check whether a random number is less than or equal to this
 
-		ArrayPushCell(neighbourChances, chance); // TODO check if this has the same order as the neighbourWaypoints array
+		ArrayPushCell(neighbourChances, chance); // TODO: check if this has the same order as the neighbourWaypoints array
 	}
 
 	// 4. Now pick one of the neighbours based on the chance and a random number
@@ -2531,16 +2459,6 @@ getNextWaypoint(curr[WAYPOINT], next[WAYPOINT], wpToAvoid[]="")
 		if (rand <= chance)
 		{
 			ArrayGetArray(neighbourWaypoints, i, next);
-			/*
-			// FIXME: infinite loop
-			if (curr[WP_ID] == next[WP_ID] && ArraySize(neighbourWaypoints) > 1)
-			{
-				// We don't want to go back to the previous point if there are more possible picks
-				rand = random_float(0.00, 1.00);
-				i = 0;
-				continue;
-			}
-			*/
 			return;
 		}
 	}
@@ -2730,7 +2648,9 @@ public MonsterThink(id)
 initGame()
 {
 	flushGame();
-	configureNexus();
+	initNexus();
+	set_pev(g_Nexus, pev_takedamage, DAMAGE_YES);
+
 	if (g_SyncHudEnd) ClearSyncHud(0, g_SyncHudEnd);
 	g_GameState = GAME_RUNNING;
 
@@ -2847,7 +2767,7 @@ monsterInit(id)
 
 	set_pev(id, pev_gravity, 1.0);
 	set_pev(id, pev_animtime, get_gametime());
-	// TODO research what are the correct sequences for each monster class
+	// TODO: research what are the correct sequences for each monster class
 	set_pev(id, pev_sequence, ZOMBIE_WALK_SEQ);
 
 	// The more monsters spawned, the lower framerate,
@@ -2861,14 +2781,14 @@ setMonsterHealth(id)
 {
 	new Float:health = g_MonsterClass[id][MONSTER_HEALTH];
 	if (g_CurrDifficulty != DIFFICULTY_SURVIVAL)
-		health *= g_DifficultyStats[g_CurrDifficulty][0];
+		health *= g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_STATS_MULTIPLIER];
 	else
 		health *= getSurvivalStatsMultiplier();
 
 	//server_print("%s hp=%.2f", g_MonsterClass[id][MONSTER_ENTITY_NAME], health);
 
 	if (health <= 0.0)
-		health = g_MonsterClass[id][MONSTER_HEALTH] * g_DifficultyStats[DEFAULT_DIFFICULTY][0];
+		health = g_MonsterClass[id][MONSTER_HEALTH] * g_DifficultyStats[DEFAULT_DIFFICULTY][DIFFICULTY_STATS_MULTIPLIER];
 
 	if (health <= 0.0)
 		health = DEFAULT_MONSTER_HEALTH;
@@ -2900,7 +2820,7 @@ monsterReachedNexus(id)
 
 		if (newNexusHP <= 0.0)
 		{
-			console_print(0, "The Nexus has been destroyed by monsters");
+			server_print("The Nexus has been destroyed by monsters");
 			nexusDestroyed();
 		}
 		else
@@ -2910,7 +2830,7 @@ monsterReachedNexus(id)
 	removeMonster(id);
 }
 
-// TODO improve this... in first place, why are there monsters above the sky?
+// TODO: improve this... in first place, why are there monsters above the sky?
 isStuckAboveSky(id, Float:origin[3]/*, Float:velocity[3]*/)
 {
 	if (equali(g_Map, "ag_defense_a", 12) || equali(g_Map, "ag_defense_01", 13))
@@ -2977,7 +2897,7 @@ removeMonster(id, bool:removeFromAlive=true)
 
 nexusDestroyed()
 {
-	console_print(0, "Defeat!!!");
+	server_print("Defeat!!!");
 	server_cmd("agabort");
 	server_exec();
 	g_GameState = GAME_DEFEAT;
@@ -2999,7 +2919,7 @@ nexusDestroyed()
 
 gameWon()
 {
-	console_print(0, "Victory!!!");
+	server_print("Victory!!!");
 	server_cmd("agabort");
 	server_exec();
 	g_GameState = GAME_VICTORY;
@@ -3195,7 +3115,7 @@ updateHUD()
 		formatex(difficultyName, charsmax(difficultyName), g_Difficulties[g_CurrDifficulty]);
 		ucfirst(difficultyName);
 
-		new maxRound = g_DifficultyStats[g_CurrDifficulty][1];
+		new maxRound = g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS];
 
 		if (g_CurrRound == 0)
 			formatex(timeLeftText, charsmax(timeLeftText), "Prepare and take weapons!\nGame starting in");
@@ -3225,7 +3145,6 @@ updateHUD()
 
 		if (g_CurrRound > 0)
 		{
-			// TODO: add difficulty level
 			new Array:monstersArr = ArrayGetCell(g_MonsterTypesPerRound, g_CurrRound-1);
 			new totalMonstersInRound = ArraySize(monstersArr);
 			if (totalMonstersInRound)
@@ -3241,7 +3160,6 @@ updateHUD()
 						"%s - Round %d - Monsters [%d / %d]",
 						difficultyName, g_CurrRound, monstersAlive, totalMonstersInRound);
 
-				// TODO add difficulty level (both in hudmessage and in hostname)
 				new hostname[64];
 				formatex(hostname, charsmax(hostname), "%s | %s %dhp, Round %d [%d/%d]",
 					g_OriginalHostname, difficultyName, floatround(nexusHP, floatround_ceil),
