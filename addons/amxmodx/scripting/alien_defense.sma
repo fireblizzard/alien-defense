@@ -2,16 +2,14 @@
 #include <amxmisc>
 #include <engine>
 #include <fakemeta>
-#include <xs>
-#include <hamsandwich>
-#include <hlsdk_const>
-#include <hl>
 #include <fun>
+#include <hamsandwich>
+#include <hl>
+#include <hlsdk_const>
+#include <xs>
 
 #pragma semicolon 1
 #pragma ctrlchar '\'
-
-#define AUTHOR  "naz"
 
 #define EULER	2.71828182846
 #define EULER2	5.43656365692
@@ -64,8 +62,6 @@
 
 #define DEFAULT_DIFFICULTY		DIFFICULTY_NORMAL
 
-#define AGVOTE_TIME				30.0
-
 #define AGVOTE_UNDECIDED		0x00
 #define AGVOTE_YES 				0x01
 #define AGVOTE_NO 				0x02
@@ -85,10 +81,11 @@
 
 // Game status
 #define GAME_IDLE				0x00
-#define GAME_RUNNING			0x01
-#define GAME_DEFEAT				0x02
+#define GAME_STARTING			0x01
+#define GAME_RUNNING			0x02
 #define GAME_ABORTED			0x03
-#define GAME_VICTORY			0x04
+#define GAME_DEFEAT				0x04
+#define GAME_VICTORY			0x05
 
 #define MODE_FUN				0x00
 #define MODE_COMPETITIVE		0x01
@@ -98,11 +95,12 @@
 #define TASKID_START_ROUND 					689151
 #define TASKID_UNSTUCK_ENTITY 				291739
 #define TASKID_UNSTUCK_ENTITY_WITH_MONSTER 	234787
-#define TASKID_AGVOTE_FAILED				927401
 #define TASKID_GARBAGE_REMOVAL				456050
 #define TASKID_GONARCH_REMOVAL				234782
+#define TASKID_INIT_PLAYER					892349
 
-#define IsPlayer(%1) (1 <= %1 <= g_MaxPlayers)
+#define isPlayer(%1) (1 <= %1 <= g_MaxPlayers)
+#define isSpectator(%1) (pev(%1, pev_iuser1) > 0)
 
 /*
 	MONSTER						MODEL 							CPP FILE
@@ -221,8 +219,6 @@ new const g_GameStateString[][] =
 	"victory"
 };
 
-new Trie:g_Gibs; // model_path -> [model_number, material]; e.g.: "models/woodgibs.mdl" -> [2, BREAK_WOOD]
-
 new const g_GibModels[][] =
 {
 	"models/bonegibs.mdl",
@@ -231,7 +227,6 @@ new const g_GibModels[][] =
 	"models/ceilinggibs.mdl",
 	"models/cindergibs.mdl",
 	"models/computergibs.mdl",
-	"models/controller.mdl",
 	"models/garbagegibs.mdl",
 	"models/glassgibs.mdl",
 	"models/hgibs.mdl",
@@ -259,12 +254,19 @@ new const g_GibMaterials[sizeof(g_GibModels)] =
 };
 
 new const g_Models[][] = {
+	"models/aflock.mdl",
 	"models/agrunt.mdl",
 	"models/baby_headcrab.mdl",
 	"models/big_mom.mdl",
+	"models/boid.mdl",
 	"models/bullsquid.mdl",
+	//"models/charger.mdl",
+	"models/chumtoad.mdl",
+	"models/controller.mdl",
+	"models/floater.mdl",
 	"models/friendly.mdl",
 	"models/garg.mdl",
+	"models/gasbag.mdl",
 	"models/headcrab.mdl",
 	"models/houndeye.mdl",
 	"models/hunter.mdl",
@@ -273,6 +275,11 @@ new const g_Models[][] = {
 	"models/nihilanth.mdl",
 	"models/pantagruel.mdl",
 	"models/panther.mdl",
+	"models/protozoa.mdl",
+	//"models/redheadcrab.mdl",
+	"models/snapbug.mdl",
+	"models/tentacle2.mdl",
+	"models/w_sqknest.mdl",
 	"models/zombie.mdl"
 };
 
@@ -297,10 +304,16 @@ new const g_Sounds[][] =
 	"agrunt/ag_pain3.wav",
 	"agrunt/ag_pain4.wav",
 	"agrunt/ag_pain5.wav",
+	"ambience/flies.wav",
+	"ambience/squirm2.wav",
 	"aslave/slv_die1.wav",
 	"aslave/slv_die2.wav",
 	"aslave/slv_pain1.wav",
 	"aslave/slv_pain2.wav",
+	"boid/boid_alert1.wav",
+	"boid/boid_alert2.wav",
+	"boid/boid_idle1.wav",
+	"boid/boid_idle2.wav",
 	"bullchicken/bc_acid1.wav",
 	"bullchicken/bc_attack2.wav",
 	"bullchicken/bc_attack3.wav",
@@ -427,7 +440,31 @@ new const g_Sounds[][] =
 	"houndeye/he_pain1.wav",
 	"houndeye/he_pain3.wav",
 	"houndeye/he_pain4.wav",
-	"houndeye/he_pain5.wav",
+	"houndeye/he_pain5.wav",/*
+	"player/pl_dirt1.wav",
+	"player/pl_dirt2.wav",
+	"player/pl_dirt3.wav",
+	"player/pl_dirt4.wav",
+	"player/pl_slosh1.wav",
+	"player/pl_slosh2.wav",
+	"player/pl_slosh3.wav",
+	"player/pl_slosh4.wav",*/
+	"tentacle/te_alert1.wav",
+	"tentacle/te_alert2.wav",
+	"tentacle/te_flies1.wav",
+	"tentacle/te_move1.wav",
+	"tentacle/te_move2.wav",
+	"tentacle/te_roar1.wav",
+	"tentacle/te_roar2.wav",
+	"tentacle/te_search1.wav",
+	"tentacle/te_search2.wav",
+	"tentacle/te_sing1.wav",
+	"tentacle/te_sing2.wav",
+	"tentacle/te_squirm2.wav",
+	"tentacle/te_strike1.wav",
+	"tentacle/te_strike2.wav",
+	"tentacle/te_swing1.wav",
+	"tentacle/te_swing2.wav",
 	"weapons/cbar_miss1.wav",
 	"weapons/electro4.wav",
 	"weapons/mine_charge.wav",
@@ -531,22 +568,33 @@ new g_DifficultyStats[][DIFFICULTY] = {
 	{5.0, 60}
 };
 
-new const PLUGIN[]					= "Alien Defense";
-new const VERSION[]					= "0.8.0-alpha";
+new const AUTHOR[]					= "naz";
+new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
+new const VERSION[]					= "0.9.0-alpha";
+
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
 new const WAYPOINTS_A5_FILENAME[]	= "waypoints_a5.ini";
 new const ROUNDS_FILENAME[]			= "rounds.ini";
 new const PLUGIN_CONFIGS_DIR[]		= "/alien_defense";
+
 new g_ConfigsDir[256];
 new g_Map[64];
 new g_OriginalHostname[64];
+
+new g_MainMenuItemCallback;
+new g_ShopMenuItemCallback;
+new g_AdminMenuItemCallback;
+//new g_SpawnMenuItemCallback;
+//new g_RemoveMenuItemCallback;
 
 // Stores entities with key wp_id and such, so you can create waypoints with VHE/JACK/Sledge, compile map,
 // run it and copy the corresponding console output to a waypoints.ini
 new g_WaypointsArr[MAX_ENTITIES+1][WAYPOINT];
 new Trie:g_Waypoints;
+new Trie:g_Gibs; // model_path -> [model_number, material]; e.g.: "models/woodgibs.mdl" -> [2, BREAK_WOOD]
+new Trie:g_ShopItems; // name -> price; e.g.: "gauss" -> 150.0
 new Trie:g_MonsterData;
 new Array:g_MonsterTypesPerRound; // rounds are stored here, and each round is an Array of monsters that will be spawned
 new Array:g_MonsterSpawns;
@@ -585,26 +633,23 @@ new Float:g_NexusEndHP;
 new Float:g_NextSatchelsMsgTime; // cooldown for showing the message about satchel amount in the map
 
 // Vote control
-new Float:g_NextAgVoteMinTime;
-new g_PlayerAgVote[MAX_PLAYERS+1]; // 0 = undecided, 1 = yes, 2 = no
+//new Float:g_NextAgVoteMinTime;
+//new g_PlayerAgVote[MAX_PLAYERS+1]; // 0 = undecided, 1 = yes, 2 = no
+//new bool:g_AgVoteRunning;
 new g_NextDifficulty = DEFAULT_DIFFICULTY;
-new bool:g_AgVoteRunning;
 
 // HUD stuff
 new g_HudRGB[3]; // TODO: this should vary depending on difficulty
-new g_SyncHudRoundTimeLeft; // e.g.: "Next round in: 01:04"
-new g_SyncHudRoundInfo; // e.g.: "Hard - Round [7 / 20] - Monsters [24 / 38]"
-new g_SyncHudInfoAboveScores; // e.g.: "Nexus: 910hp (Aegis: 00:04)"
-new g_SyncHudScore; // e.g.: naz - 74084 points
-new g_SyncHudAimingInfo; // e.g.: monster_zombie - HP: 173
+new g_SyncHudRoundTimeLeft;		// e.g.: "Next round in: 01:04"
+new g_SyncHudRoundInfo;			// e.g.: "Hard - Round [7 / 20] - Monsters [24 / 38]"
+new g_SyncHudInfoAboveScores;	// e.g.: "Nexus: 910hp (Aegis: 00:04)"
+new g_SyncHudScore;				// e.g.: naz - 74084 points
+new g_SyncHudAimingInfo;		// e.g.: monster_zombie - HP: 173
 new g_SyncHudEnd;
 
 // Game cvars
 new pcvar_hostname;
 new pcvar_sv_ag_match_running;
-new pcvar_sv_ag_allow_vote;
-new pcvar_sv_ag_vote_start;
-new pcvar_sv_ag_vote_failed_time;
 
 // Plugin cvars
 new pcvar_ad_setup_time;
@@ -614,6 +659,10 @@ new pcvar_ad_time_between_waves;
 new pcvar_ad_max_monsters_per_round;
 new pcvar_ad_nexus_health;
 new pcvar_ad_max_satchels;
+
+/////////////////////////////////////////////////////
+//	MAIN AMXX HOOKS
+/////////////////////////////////////////////////////
 
 public plugin_precache()
 {
@@ -636,14 +685,14 @@ public plugin_precache()
 		TrieSetArray(g_Gibs, g_GibModels[i], data, sizeof(data));
 	}
 
-	g_Waypoints = TrieCreate();
+	//g_Waypoints = TrieCreate();
 	register_forward(FM_KeyValue, "FwKeyValue");
 }
 
 public plugin_init()
 {
 	server_print("[%s] Initializing plugin...", PLUGIN_TAG);
-	register_plugin(PLUGIN, VERSION, AUTHOR);
+	register_plugin(PLUGIN_NAME, VERSION, AUTHOR);
 	register_cvar("alien_defense_version", VERSION, FCVAR_SPONLY | FCVAR_SERVER | FCVAR_UNLOGGED);
 
 	if (!is_running("ag"))
@@ -661,29 +710,26 @@ public plugin_init()
 	get_cvar_string("sv_ag_gamemode", ag_gamemode, charsmax(ag_gamemode));
 	if (ag_gamemode[0] && !(equali(ag_gamemode, "aliendefense") || equali(ag_gamemode, "adf")))
 	{
-		server_print("[%s] The %s plugin can only be run in the \"adf\" gamemode.", PLUGIN_TAG, PLUGIN);
+		server_print("[%s] The %s plugin can only be run in the \"adf\" gamemode.", PLUGIN_TAG, PLUGIN_NAME);
 		pause("ad");
 		return;
 	}
 	register_forward(FM_GetGameDescription, "FwGetGameDescriptionPre");
 
-	pcvar_hostname = get_cvar_pointer("hostname");
-	pcvar_sv_ag_match_running = get_cvar_pointer("sv_ag_match_running");
-	pcvar_sv_ag_allow_vote = get_cvar_pointer("sv_ag_allow_vote");
-	pcvar_sv_ag_vote_start = get_cvar_pointer("sv_ag_vote_start");
-	pcvar_sv_ag_vote_failed_time = get_cvar_pointer("sv_ag_vote_failed_time");
+	pcvar_hostname					= get_cvar_pointer("hostname");
+	pcvar_sv_ag_match_running		= get_cvar_pointer("sv_ag_match_running");
 
-	pcvar_ad_setup_time = register_cvar("ad_setup_time", "15.9");
-	pcvar_ad_base_round_time = register_cvar("ad_base_round_time", "30.0");
+	pcvar_ad_setup_time				= register_cvar("ad_setup_time", "15.9");
+	pcvar_ad_base_round_time		= register_cvar("ad_base_round_time", "30.0");
 
 	// Here waves != rounds. A round can have several waves of monsters,
 	// because they may not be able to spawn all at once, so they spawn in different waves,
 	// with a much smaller interval than the interval between rounds
-	pcvar_ad_time_between_waves = register_cvar("ad_time_between_waves", "10.0");
-	pcvar_ad_max_monsters_per_round = register_cvar("ad_max_monsters_per_round", "75");
-	pcvar_ad_round_time_multiplier = register_cvar("ad_round_time_multiplier", "2.5");
-	pcvar_ad_nexus_health = register_cvar("ad_nexus_health", "4000.0");
-	pcvar_ad_max_satchels = register_cvar("ad_max_satchels", "40");
+	pcvar_ad_time_between_waves		= register_cvar("ad_time_between_waves", "10.0");
+	pcvar_ad_max_monsters_per_round	= register_cvar("ad_max_monsters_per_round", "75");
+	pcvar_ad_round_time_multiplier	= register_cvar("ad_round_time_multiplier", "2.5");
+	pcvar_ad_nexus_health			= register_cvar("ad_nexus_health", "4000.0");
+	pcvar_ad_max_satchels			= register_cvar("ad_max_satchels", "40");
 
 	// HL/AG messages
 	new msgCountdown	= get_user_msgid("Countdown");
@@ -696,31 +742,38 @@ public plugin_init()
 
 	configureMonsters();
 
-	register_clcmd("ad_cmt", "PrintMonsterTargetEnemy");
-	register_clcmd("ad_check_monster_target", "PrintMonsterTargetEnemy");
-	register_clcmd("ad_spawn", "CmdSpawnMonster");
-	register_clcmd("ad_testround", "CmdTestRound");
-	register_clcmd("ad_bot", "CmdSpawnBot", ADMIN_CFG, "- spawns a bot so you can do agstart"); // a fake client to agstart alone
-	register_clcmd("ad_start", "CmdStart", _, "- forces agstart when playing alone by spawning and then kicking a bot");
-	register_clcmd("adstart", "CmdStart", _, "- forces agstart when playing alone by spawning and then kicking a bot");
-	register_clcmd("ad_check", "CmdCheckGameStatus", ADMIN_CFG, "- prints the current game state to console");
-	register_clcmd("ad_remove", "CmdRemoveMonster", ADMIN_CFG, "- removes a monster by id (use check_monsters to know ids)");
-	register_clcmd("ad_level", "CmdSetLevel", ADMIN_CFG, "- sets difficulty level");
-	register_clcmd("ad_dump", "CmdDumpEntities");
-	register_clcmd("ad_rm", "CmdRemoveGarbage");
+	register_clcmd("ad_print_target",	"CmdPrintTarget");
+	register_clcmd("ad_spawn",			"CmdSpawnMonster",	ADMIN_CFG,	"- spawns a monster by name, e.g: monster_bigmomma, monster_panther, monster_hunter, ...");
+	register_clcmd("ad_testround",		"CmdTestRound",		ADMIN_CFG,	"- spawns a monster by name, e.g: monster_bigmomma, monster_panther, monster_hunter, ...");
+	//register_clcmd("ad_bot",			"CmdSpawnBot",		ADMIN_CFG,	"- spawns a bot so you can do agstart"); // a fake client to agstart alone
+	register_clcmd("ad_start",			"CmdStart",			_,			"- forces agstart when playing alone by spawning and then kicking a bot");
+	register_clcmd("adstart",			"CmdStart",			_,			"- forces agstart when playing alone by spawning and then kicking a bot");
+	register_clcmd("ad_check",			"CmdCheckGame",		ADMIN_CFG,	"- prints the current game state to console"); // TODO: review if makes sense to be admin-only
+	register_clcmd("ad_remove",			"CmdRemoveMonster",	ADMIN_CFG,	"- removes a monster by id (use check_monsters to know ids)");
+	register_clcmd("ad_level",			"CmdSetLevel",		ADMIN_CFG,	"- sets difficulty level");
+	register_clcmd("ad_dump",			"CmdDumpEntities",	ADMIN_CFG,	"- dumps an entity list to a file in the server");
+	register_clcmd("ad_rm",				"CmdRemoveGarbage");
 
-	register_clcmd("say /ad_start", "CmdStart", _, "- forces agstart when playing alone by spawning and then kicking a bot");
-	register_clcmd("say ad_start", "CmdStart", _, "- forces agstart when playing alone by spawning and then kicking a bot");
-	register_clcmd("say adstart", "CmdStart", _, "- forces agstart when playing alone by spawning and then kicking a bot");
-	register_clcmd("say /unsatchel", "CmdUnsatchel");
+	register_clcmd("say /ad_start",		"CmdStart",			_,			"- alias for agstart normal; that is, start a game in normal difficulty");
+	register_clcmd("say ad_start", 		"CmdStart",			_,			"- alias for agstart normal; that is, start a game in normal difficulty");
+	register_clcmd("say adstart",		"CmdStart",			_,			"- alias for agstart normal; that is, start a game in normal difficulty");
+	register_clcmd("say /unsatchel",	"CmdUnsatchel");
+	register_clcmd("say /gauss",		"CmdBuyGauss");
+	register_clcmd("say /egon",			"CmdBuyEgon");
+	register_clcmd("say /repair",		"CmdNexusRepair");
 
-	//register_clcmd("agstart", "CmdAgStart");
-	//register_clcmd("yes", "CmdYes");
-	//register_clcmd("no", "CmdNo");
+	register_clcmd("say /menu",			"ShowMainMenu");
+	register_clcmd("say /play",			"ShowDifficultyMenu");
+	register_clcmd("say /shop",			"ShowShopMenu");
+	register_clcmd("say /admin",		"ShowAdminMenu",	ADMIN_CFG,	"- shows the admin menu");
+	register_clcmd("say /spawn",		"ShowSpawnMenu",	ADMIN_CFG,	"- shows the monster spawning menu");
+	//register_clcmd("remove_menu",	"ShowRemoveMenu");
 
-	register_clcmd("say /repair", "CmdNexusRepair");
-	register_clcmd("say /egon", "CmdBuyEgon");
-	register_clcmd("say /gauss", "CmdBuyGauss");
+	g_MainMenuItemCallback		= menu_makecallback("MainMenuItemCallback");
+	g_ShopMenuItemCallback		= menu_makecallback("ShopMenuItemCallback");
+	g_AdminMenuItemCallback		= menu_makecallback("AdminMenuItemCallback");
+	//g_SpawnMenuItemCallback	= menu_makecallback("SpawnMenuItemCallback");
+	//g_RemoveMenuItemCallback	= menu_makecallback("RemoveMenuItemCallback");
 
 	new TrieIter:it = TrieIterCreate(g_MonsterData);
 	while (!TrieIterEnded(it))
@@ -752,8 +805,8 @@ public plugin_init()
 	RegisterHam(Ham_Weapon_SecondaryAttack,	"weapon_satchel",	"FwThrowSatchel2Pre");
 	RegisterHam(Ham_Spawn,					"monster_satchel",	"FwSatchelSpawnPost", 1);
 
-	register_forward(FM_ShouldCollide, "FwShouldCollide");
-	register_forward(FM_RemoveEntity, "FwEntityRemovalPost", 1);
+	register_forward(FM_ShouldCollide,	"FwShouldCollide");
+	register_forward(FM_RemoveEntity,	"FwEntityRemovalPost", 1);
 
 	for (new i = 0; i < sizeof(g_GarbageEntities); i++)
 	{
@@ -763,17 +816,17 @@ public plugin_init()
 
 	g_MaxPlayers = get_maxplayers();
 
-	g_TaskEntity = engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
-	set_pev(g_TaskEntity, pev_classname, engfunc(EngFunc_AllocString, "timer_entity"));
-	set_pev(g_TaskEntity, pev_nextthink, get_gametime() + 1.01);
+	g_TaskEntity	= engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
+	g_HudEntity		= engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
+	g_CheckerEntity	= engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
 
-	g_HudEntity = engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
-	set_pev(g_HudEntity, pev_classname, engfunc(EngFunc_AllocString, "hud_entity"));
-	set_pev(g_HudEntity, pev_nextthink, get_gametime() + 1.01);
+	set_pev(g_TaskEntity,		pev_classname, engfunc(EngFunc_AllocString, "timer_entity"));
+	set_pev(g_HudEntity,		pev_classname, engfunc(EngFunc_AllocString, "hud_entity"));
+	set_pev(g_CheckerEntity,	pev_classname, engfunc(EngFunc_AllocString, "checker_entity"));
 
-	g_CheckerEntity = engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
-	set_pev(g_CheckerEntity, pev_classname, engfunc(EngFunc_AllocString, "checker_entity"));
-	set_pev(g_CheckerEntity, pev_nextthink, get_gametime() + 3.01);
+	set_pev(g_TaskEntity,		pev_nextthink, get_gametime() + 1.01);
+	set_pev(g_HudEntity,		pev_nextthink, get_gametime() + 1.01);
+	set_pev(g_CheckerEntity,	pev_nextthink, get_gametime() + 3.01);
 
 	g_SyncHudRoundTimeLeft		= CreateHudSyncObj();
 	g_SyncHudRoundInfo			= CreateHudSyncObj();
@@ -807,6 +860,7 @@ public plugin_cfg()
 
 	loadWaypoints();
 	loadRounds();
+	loadShop();
 
 	// Store spawn points in an array to stress less the machine at expense of memory
 	g_MonsterSpawns = ArrayCreate(WAYPOINT);
@@ -826,6 +880,28 @@ public plugin_cfg()
 	get_pcvar_string(pcvar_hostname, g_OriginalHostname, charsmax(g_OriginalHostname));
 }
 
+public plugin_end()
+{
+	TrieDestroy(g_Waypoints);
+	TrieDestroy(g_ShopItems);
+	TrieDestroy(g_MonsterData);
+	ArrayDestroy(g_MonsterTypesPerRound);
+	ArrayDestroy(g_MonstersAlive);
+	ArrayDestroy(g_MonsterSpawns);
+}
+
+public client_putinserver(id)
+{
+	set_task(1.20, "InitPlayer", id + TASKID_INIT_PLAYER);
+}
+
+public client_disconnected(id, bool:drop, message[], maxlen)
+{
+	g_PlayerScore[id] = 0.0;
+	g_PlayerCredits[id] = 0.0;
+	g_PlayerLastSatchel[id] = 0;
+}
+
 public FwKeyValue(ent, kvd)
 {
 	if (!pev_valid(ent))
@@ -833,6 +909,12 @@ public FwKeyValue(ent, kvd)
 
 	getMapWaypoints(ent, kvd);
 	return FMRES_IGNORED;
+}
+
+public InitPlayer(taskId)
+{
+	new id = taskId - TASKID_INIT_PLAYER;
+	ShowMainMenu(id);
 }
 
 // Gets and stores waypoints that were created directly in the map (compiled with them)
@@ -896,15 +978,6 @@ getMapWaypoints(ent, kvd)
 	}
 }
 
-public plugin_end()
-{
-	TrieDestroy(g_Waypoints);
-	TrieDestroy(g_MonsterData);
-	ArrayDestroy(g_MonsterTypesPerRound);
-	ArrayDestroy(g_MonstersAlive);
-	ArrayDestroy(g_MonsterSpawns);
-}
-
 configureServer()
 {
 	server_print("[%s] Setting commands...", PLUGIN_TAG);
@@ -961,18 +1034,18 @@ configureMonsters()
 
 	/* ----- Custom monsters ----- */
 	insertMonsterData("monster_aflock",				"models/aflock.mdl",		20.0,	160.0,	220.0,	true, true);
-	insertMonsterData("monster_charger",			"models/charger.mdl",		15.0,	110.0,	250.0,	true, false);
-	insertMonsterData("monster_chumtoad",			"models/chumtoad.mdl",		10.0,	95.0,	240.0,	true, false);
+	//insertMonsterData("monster_charger",			"models/charger.mdl",		15.0,	110.0,	250.0,	true, false);
+	//insertMonsterData("monster_chumtoad",			"models/chumtoad.mdl",		10.0,	95.0,	240.0,	true, false);
 	insertMonsterData("monster_friendly",			"models/friendly.mdl",		40.0,	450.0,	240.0,	true, false);
-	insertMonsterData("monster_gasbag",				"models/gasbag.mdl",		20.0,	280.0,	160.0,	true, true);
+	//insertMonsterData("monster_gasbag",				"models/gasbag.mdl",		20.0,	280.0,	160.0,	true, true);
 	insertMonsterData("monster_hunter",				"models/hunter.mdl",		40.0,	500.0,	280.0,	true, false);
 	insertMonsterData("monster_kingpin",			"models/kingpin.mdl",		35.0,	320.0,	260.0,	true, false);
 	insertMonsterData("monster_pantagruel",			"models/pantagruel.mdl",	180.0,	1600.0,	170.0,	true, false);
 	insertMonsterData("monster_panther",			"models/panther.mdl",		25.0,	250.0,	400.0,	true, false);
-	insertMonsterData("monster_protozoa",			"models/protozoa.mdl",		10.0,	210.0,	180.0,	true, true);
-	insertMonsterData("monster_redheadcrab",		"models/redheadcrab.mdl",	10.0,	110.0,	260.0,	true, false);
-	insertMonsterData("monster_snapbug",			"models/snapbug.mdl",		15.0,	95.0,	280.0,	true, false);
-	insertMonsterData("monster_sqknest",			"models/w_sqknest.mdl",		20.0,	190.0,	190.0,	true, false);
+	//insertMonsterData("monster_protozoa",			"models/protozoa.mdl",		10.0,	210.0,	180.0,	true, true);
+	//insertMonsterData("monster_redheadcrab",		"models/redheadcrab.mdl",	10.0,	110.0,	260.0,	true, false);
+	//insertMonsterData("monster_snapbug",			"models/snapbug.mdl",		15.0,	95.0,	280.0,	true, false);
+	//insertMonsterData("monster_sqknest",			"models/w_sqknest.mdl",		20.0,	190.0,	190.0,	true, false);
 }
 
 loadWaypoints()
@@ -1118,11 +1191,24 @@ loadRounds()
 	server_print("[%s] Loaded %d rounds from %s", PLUGIN_TAG, round, roundsFilePath);
 }
 
-initNexus() {
+loadShop()
+{
+	g_ShopItems = TrieCreate();
+
+	// Weapons:
+	TrieSetCell(g_ShopItems, "egon", 100.0);
+	TrieSetCell(g_ShopItems, "gauss", 90.0);
+
+	// Other:
+	TrieSetCell(g_ShopItems, "repair", 2500.0);
+}
+
+initNexus()
+{
 	g_Nexus = find_ent_by_tname(0, NEXUS_NAME);
 	if (!pev_valid(g_Nexus))
 	{
-		server_print("[%s] There's no entity named %s in this map. Cannot run the %s mod.", PLUGIN_TAG, NEXUS_NAME, PLUGIN);
+		server_print("[%s] There's no entity named %s in this map. Cannot run the %s mod.", PLUGIN_TAG, NEXUS_NAME, PLUGIN_NAME);
 		pause("a");
 		return;
 	}
@@ -1132,7 +1218,7 @@ initNexus() {
 	if (!equal(className, "func_breakable"))
 	{
 		// TODO: review if it's really necessary to be func_breakable to be able to take damage
-		server_print("[%s] There Nexus is not of type func_breakable. Cannot run the %s mod.", PLUGIN_TAG, PLUGIN);
+		server_print("[%s] There Nexus is not of type func_breakable. Cannot run the %s mod.", PLUGIN_TAG, PLUGIN_NAME);
 		pause("a");
 		return;
 	}
@@ -1150,13 +1236,6 @@ initNexus() {
 	server_print("[%s] The Nexus is at pos{%.2f, %.2f, %.2f}", PLUGIN_TAG, origin[0], origin[1], origin[2]);
 }
 
-public client_disconnected(id, bool:drop, message[], maxlen)
-{
-	g_PlayerScore[id] = 0.0;
-	g_PlayerCredits[id] = 0.0;
-	g_PlayerLastSatchel[id] = 0;
-}
-
 /////////////////////////////////////////////////////
 //	FORWARDS
 /////////////////////////////////////////////////////
@@ -1172,6 +1251,8 @@ public FwMsgCountdown(id, dest, ent)
 
 	if (count >= 9)
 	{
+		g_GameState = GAME_STARTING;
+
 		new hostname[64], difficultyName[32];
 		formatex(difficultyName, charsmax(difficultyName), g_Difficulties[g_CurrDifficulty]);
 		ucfirst(difficultyName);
@@ -1208,21 +1289,22 @@ public FwMsgSettings(id, dest, ent)
 public FwMsgVote(id)
 {
 	static status, yes, no, undecided, setting[32], value[32], caller[32];
-	status = get_msg_arg_int(1);
-	yes = get_msg_arg_int(2);
-	no = get_msg_arg_int(3);
-	undecided = get_msg_arg_int(4);
+	status		= get_msg_arg_int(1);
+	yes			= get_msg_arg_int(2);
+	no			= get_msg_arg_int(3);
+	undecided	= get_msg_arg_int(4);
 	get_msg_arg_string(5, setting,	charsmax(setting));
 	get_msg_arg_string(6, value,	charsmax(value));
 	get_msg_arg_string(7, caller,	charsmax(caller));
+
 	server_print("[%.4f] Vote::id=%d,status=%d,yes=%d,no=%d,n/a=%d,k=%s,v=%s,caller=%s",
 		get_gametime(), id, status, yes, no, undecided, setting, value, caller);
-
+/*
 	if (status == AGVOTE_CALLED)
 		g_AgVoteRunning = true;
 	else
 		g_AgVoteRunning = false;
-
+*/
 	if (equali(setting, "agstart") && status == AGVOTE_ACCEPTED)
 	{
 		if (containi(value, "full") != -1) // TODO: handle agstart full; not allowed for the moment
@@ -1241,10 +1323,10 @@ public FwMsgVote(id)
 				break;
 			}
 		}
-		g_NextAgVoteMinTime = get_gametime();
+		//g_NextAgVoteMinTime = get_gametime();
 		g_CurrDifficulty = g_NextDifficulty;
 		g_NextDifficulty = DEFAULT_DIFFICULTY;
-		resetAgVotes();
+		//resetAgVotes();
 
 		new difficulty[32];
 		formatex(difficulty, charsmax(difficulty), g_Difficulties[g_CurrDifficulty]);
@@ -1253,13 +1335,12 @@ public FwMsgVote(id)
 
 		server_print("[%.4f] Vote:AgStart::value=%s,difficulty=%d,mode=%d", get_gametime(), value, g_CurrDifficulty, g_CurrMode);
 	}
-
 }
 
 public FwGetGameDescriptionPre()
 {
 	new ver[36];
-	formatex(ver, charsmax(ver), "%s v%s", PLUGIN, VERSION);
+	formatex(ver, charsmax(ver), "%s v%s", PLUGIN_NAME, VERSION);
 	server_print("[%s] Changing game description to '%s'", PLUGIN_TAG, ver);
 	forward_return(FMV_STRING, ver);
 
@@ -1273,7 +1354,7 @@ public FwBreakableTakeDamagePre(id, attackerWeapon, attacker, Float:damage, dama
 		new Float:remainingHealth, Float:realDamage = damage;
 		pev(id, pev_health, remainingHealth);
 
-		if (IsPlayer(attacker))
+		if (isPlayer(attacker))
 		{
 			if (get_user_weapon(attacker) == HLW_CROWBAR)
 			{ // FIXME: crossbow's attack1 also has double damage...
@@ -1290,6 +1371,7 @@ public FwBreakableTakeDamagePre(id, attackerWeapon, attacker, Float:damage, dama
 				new playerName[32];
 				get_user_name(attacker, playerName, charsmax(playerName));
 				server_print("The Nexus has been destroyed by %s", playerName);
+
 				nexusDestroyed();
 				return HAM_SUPERCEDE;
 			}
@@ -1310,7 +1392,7 @@ public FwMonsterTakeDamagePre(id, attackerWeapon, attacker, Float:damage, damage
 
 		new hs = get_pdata_int(id, 90); // head hit group (headshot)
 
-		if (IsPlayer(attacker))
+		if (isPlayer(attacker))
 		{
 			if (hs == 1)
 			{
@@ -1326,7 +1408,7 @@ public FwMonsterTakeDamagePre(id, attackerWeapon, attacker, Float:damage, damage
 
 		if (damage >= remainingHealth || remainingHealth <= 0.0)
 		{
-			if (IsPlayer(attacker))
+			if (isPlayer(attacker))
 				ExecuteHam(Ham_AddPoints, attacker, 1, false);
 			
 			new className[32];
@@ -1356,7 +1438,7 @@ public FwBreakableDestroyedPre(id, attacker, shouldGib)
 
 public FwPlayerDeath(id, attacker, shouldGib)
 {
-	if (pev_valid(id) && IsPlayer(id))
+	if (pev_valid(id) && isPlayer(id))
 	{
 		new Array:toRemove = ArrayCreate();
 
@@ -1391,6 +1473,8 @@ public FwPlayerDeath(id, attacker, shouldGib)
 			}
 		}
 		g_PlayerLastSatchel[id] = 0;
+
+		resetMenu(id);
 	}
 }
 
@@ -1596,7 +1680,7 @@ public FwMonsterBlockedPre(id, other)
 /////////////////////////////////////////////////////
 //	COMMANDS
 /////////////////////////////////////////////////////
-
+/*
 spawnBot()
 {
 	if (g_Bot)
@@ -1626,7 +1710,7 @@ public CmdSpawnBot(id, level, cid)
 
 	return PLUGIN_HANDLED;
 }
-
+*/
 public CmdStart(id)
 {
 	new arg1[32], arg2[32], fullArg[64];
@@ -1653,9 +1737,9 @@ public CmdStart(id)
 	server_print("adstart %s", fullArg);
 
 	if (!fullArg[0])
-		client_cmd(id, "agstart");
+		client_cmd(id, "callvote agstart");
 	else
-		client_cmd(id, "agstart %s", fullArg);
+		client_cmd(id, "callvote agstart %s", fullArg);
 
 	return PLUGIN_HANDLED;
 }
@@ -1678,15 +1762,22 @@ public CmdDumpEntities(id, level, cid)
 	if (!cmd_access(id, level, cid, 1))
 		return PLUGIN_CONTINUE;
 
+	dumpEntities();
+
+	return PLUGIN_HANDLED;
+}
+
+dumpEntities()
+{
 	new dumpPath[256];
 	formatex(dumpPath, charsmax(dumpPath), "%s/dump_%s_%d_%d.log",
-		g_ConfigsDir, g_Map, g_CurrRound, floatround((get_gametime() * 1000.0), floatround_round));
+		g_ConfigsDir, g_Map, g_CurrRound, floatround((get_gametime() * 1000.0)));
 
 	new file = fopen(dumpPath, "wt");
 	if (!file)
 	{
 		server_print("Failed to write dump log file (\"%s\")", dumpPath);
-		return PLUGIN_HANDLED;
+		return;
 	}
 
 	for (new i = 0; i < MAX_ENTITIES + 1; i++)
@@ -1702,91 +1793,9 @@ public CmdDumpEntities(id, level, cid)
 			fprintf(file, "%d Invalid\n", i);
 	}
 	fclose(file);
-
-	return PLUGIN_HANDLED;
 }
 
-// e.g.: "agstart very hard" command in console
-public CmdAgStart(id)
-{
-	server_print("CmdAgStart");
-	if (!g_AgVoteRunning && get_pcvar_num(pcvar_sv_ag_allow_vote)
-		&& get_pcvar_num(pcvar_sv_ag_vote_start) && get_gametime() >= g_NextAgVoteMinTime)
-	{
-		
-		g_NextDifficulty = DEFAULT_DIFFICULTY;
-
-		// Check the arguments to set the difficulty
-		new arg1[32], arg2[32], fullArg[64];
-		read_argv(1, arg1, charsmax(arg1)); // e.g.: very
-		read_argv(2, arg2, charsmax(arg2)); // e.g.: hard
-		if (arg2[0])
-			formatex(fullArg, charsmax(fullArg), "%s %s", arg1, arg2);
-		else
-			formatex(fullArg, charsmax(fullArg), arg1);
-		for (new i = 0; i < sizeof(g_Difficulties); i++)
-		{
-			if (equali(g_Difficulties[i], fullArg))
-				g_NextDifficulty = i;
-		}
-		server_print("AgStart::arg1=%s,arg2=%s,fullArg=%s,difficulty=%d", arg1, arg2, fullArg, g_NextDifficulty);
-
-		// An AG vote is going on
-		g_PlayerAgVote[id] = AGVOTE_YES;
-
-		if (countAgVotes(AGVOTE_YES) / get_playersnum() > 0.5)
-		{
-			g_NextAgVoteMinTime = get_gametime();
-			g_CurrDifficulty = g_NextDifficulty;
-			g_NextDifficulty = DEFAULT_DIFFICULTY;
-			server_print("[%s] Setting difficulty to %s", PLUGIN_TAG, g_Difficulties[g_CurrDifficulty]);
-
-			resetAgVotes();
-		}
-		else
-		{
-			g_AgVoteRunning = true;
-			set_task(AGVOTE_TIME, "CmdAgVoteFailed", TASKID_AGVOTE_FAILED);
-		}
-	}
-	return PLUGIN_CONTINUE;
-}
-
-public CmdAgVoteFailed(taskId)
-{
-	g_NextAgVoteMinTime = get_gametime() + get_pcvar_float(pcvar_sv_ag_vote_failed_time);
-	
-	g_AgVoteRunning = false;
-	resetAgVotes();
-}
-
-public CmdYes(id)
-{
-	server_print("#%d: yes", id);
-	if (!g_AgVoteRunning)
-	{
-		g_PlayerAgVote[id] = AGVOTE_YES;
-
-		if (countAgVotes(AGVOTE_YES) / get_playersnum() > 0.5)
-		{
-			g_AgVoteRunning = false;
-			g_NextAgVoteMinTime = get_gametime();
-			g_CurrDifficulty = g_NextDifficulty;
-			g_NextDifficulty = DEFAULT_DIFFICULTY;
-
-			remove_task(TASKID_AGVOTE_FAILED);
-			resetAgVotes();
-		}
-	}
-}
-
-public CmdNo(id)
-{
-	server_print("#%d: no", id);
-	if (!g_AgVoteRunning)
-		g_PlayerAgVote[id] = AGVOTE_NO;
-}
-
+/*
 countAgVotes(voteType)
 {
 	new result;
@@ -1806,63 +1815,63 @@ resetAgVotes()
 	for (new i = 1; i <= g_MaxPlayers; i++)
 		g_PlayerAgVote[i] = AGVOTE_UNDECIDED;
 }
+*/
 
 public CmdNexusRepair(id)
 {
-	if (g_PlayerCredits[id] >= 2500.0)
+	new Float:price;
+	TrieGetCell(g_ShopItems, "repair", price);
+
+	if (g_PlayerCredits[id] >= price)
 	{
 		if (repairNexus(id))
-			g_PlayerCredits[id] -= 2500.0;
+			g_PlayerCredits[id] -= price;
 	}
 	else
-		client_print(id, print_chat, "[%s] Sorry, you need 2500 credits to restore %dhp of the Nexus.",
-			PLUGIN_TAG, floatround(get_pcvar_float(pcvar_ad_nexus_health) * 0.1, floatround_floor));
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to restore %dhp of the Nexus.",
+			PLUGIN_TAG, floatround(price), floatround(nexusHealthPerRepair(), floatround_floor));
 
 	return PLUGIN_HANDLED;
 }
 
 public CmdBuyEgon(id)
 {
-	new weapon[] = "egon"; // TODO: maybe refactor this to pass HLW_*
-
-	if (g_PlayerCredits[id] >= 300.0) // TODO: add constants or something for these numbers
-	{
-		if (giveWeapon(id, weapon))
-			g_PlayerCredits[id] -= 300.0;
-	}
-	else
-		client_print(id, print_chat, "[%s] Sorry, you need 300 credits to buy %s.", PLUGIN_TAG, weapon);
-
+	buyWeapon(id, "egon");
 	return PLUGIN_HANDLED;
 }
 
 public CmdBuyGauss(id)
 {
-	new weapon[] = "gauss"; // TODO: maybe refactor this to pass HLW_*
-
-	if (g_PlayerCredits[id] >= 275.0)
-	{
-		if (giveWeapon(id, weapon))
-			g_PlayerCredits[id] -= 275.0;
-	}
-	else
-		client_print(id, print_chat, "[%s] Sorry, you need 275 credits to buy %s.", PLUGIN_TAG, weapon);
-
+	buyWeapon(id, "gauss");
 	return PLUGIN_HANDLED;
 }
 
-public CmdCheckGameStatus(id, level, cid)
+buyWeapon(id, weapon[])
+{
+	new Float:price;
+	TrieGetCell(g_ShopItems, weapon, price);
+
+	if (g_PlayerCredits[id] >= price)
+	{
+		if (giveWeapon(id, weapon))
+			g_PlayerCredits[id] -= price;
+	}
+	else
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to buy %s.", PLUGIN_TAG, floatround(price), weapon);
+}
+
+public CmdCheckGame(id)
 {
 	new Float:nexusHP;
 	pev(g_Nexus, pev_health, nexusHP);
 
 	console_print(id, "[%s] Current game info:", PLUGIN_TAG);
-	console_print(id, " - Game state: %s", g_GameStateString[g_GameState]);
-	console_print(id, " - Round: %d / %d", g_CurrRound, g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS]);
-	console_print(id, " - Difficulty: %d", g_CurrDifficulty);
-	console_print(id, " - Current time: %.3fs", get_gametime());
-	console_print(id, " - Round end time: %.3fs", g_RoundEndTime);
-	console_print(id, " - Nexus HP: %.2f / %.2f", nexusHP, get_pcvar_float(pcvar_ad_nexus_health));
+	console_print(id, " - Game state: %s",			g_GameStateString[g_GameState]);
+	console_print(id, " - Round: %d / %d",			g_CurrRound, g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS]);
+	console_print(id, " - Difficulty: %d",			g_CurrDifficulty);
+	console_print(id, " - Current time: %.3fs",		get_gametime());
+	console_print(id, " - Round end time: %.3fs",	g_RoundEndTime);
+	console_print(id, " - Nexus HP: %.2f / %.2f",	nexusHP, get_pcvar_float(pcvar_ad_nexus_health));
 
 	new monstersAlive = ArraySize(g_MonstersAlive);
 	if (monstersAlive == 0)
@@ -1879,14 +1888,14 @@ public CmdCheckGameStatus(id, level, cid)
 				continue;
 			}
 
-			new className[32], Float:origin[3], Float:velocity[3], Float:yourOrigin[3], Float:hp;
+			new className[32], Float:origin[3], Float:velocity[3], Float:playerOrigin[3], Float:hp;
 			pev(monster, pev_classname, className, charsmax(className));
 			pev(monster, pev_origin, origin);
 			pev(monster, pev_velocity, velocity);
 			pev(monster, pev_health, hp);
-			pev(id, pev_origin, yourOrigin);
+			pev(id, pev_origin, playerOrigin);
 			console_print(id, " ... %s #%d (%.1fhp) at pos{%.1f, %.1f, %.1f}, speed{%.1f, %.1f, %.1f}u/s... distance to you: %.1f",
-				 className, monster, hp, origin[0], origin[1], origin[2], velocity[0], velocity[1], velocity[2], get_distance_f(yourOrigin, origin));
+				 className, monster, hp, origin[0], origin[1], origin[2], velocity[0], velocity[1], velocity[2], get_distance_f(playerOrigin, origin));
 		}
 	}
 
@@ -1930,7 +1939,6 @@ public CmdCheckGameStatus(id, level, cid)
 				console_print(id, "#%d exists but is invalid", ent);
 		}
 	}
-
 	return PLUGIN_HANDLED;
 }
 
@@ -2020,11 +2028,11 @@ public CmdTestRound(id)
 		for (new i = 0; i < spawnWaves; i++)
 			set_task(i * get_pcvar_float(pcvar_ad_time_between_waves), "SpawnMonstersWave", TASKID_SPAWN_MONSTER_WAVE + i);
 	}
-
 	return PLUGIN_HANDLED;
 }
 
-public PrintMonsterTargetEnemy(id)
+// Prints the id of the specified monster's target (enemy)
+public CmdPrintTarget(id)
 {
 	console_print(id, "Printing monster debug info...");
 	new monster = read_argv_int(1);
@@ -2220,7 +2228,7 @@ getPlayingPlayersNum()
 	get_players_ex(players, playersNum, GetPlayers_ExcludeHLTV);
 	for (new i = 0; i < playersNum; i++)
 	{
-		if (!pev(players[i], pev_iuser1)) // ignore spectators
+		if (!isSpectator(players[i])) // ignore spectators
 			result++; 
 	}
 
@@ -2293,6 +2301,7 @@ public FwThinkPre(id)
 	if (id == g_HudEntity)		FwHudThinkPre(id);
 	if (id == g_TaskEntity)		FwInfoThinkPre(id);
 	if (id == g_CheckerEntity)	FwCheckerThinkPre(id);
+
 	return HAM_HANDLED;
 }
 
@@ -2305,7 +2314,7 @@ public FwHudThinkPre(id)
 	}
 	else if (g_GameState == GAME_IDLE)
 	{
-		if (floatround(get_gametime(), floatround_floor) % 7 == 0)
+		if (floatround(get_gametime(), floatround_floor) % 7 == 0) // every 7 seconds
 		{
 			set_hudmessage(g_HudRGB[0], g_HudRGB[1], g_HudRGB[2], -1.0, 0.16, 2, 1.0, 5.0, 0.1, 0.4, -1);
 			ShowSyncHudMsg(0, g_SyncHudRoundTimeLeft, "-- Type or say adstart to play! --");
@@ -2337,7 +2346,7 @@ public FwInfoThinkPre(id)
 			server_cmd("agabort");
 			server_exec();
 			g_GameState = GAME_ABORTED;
-			endGame();
+			clearGame();
 		}
 		else
 		{
@@ -2356,7 +2365,6 @@ public FwCheckerThinkPre(id)
 {
 	// Checks that the monsters array has valid monsters,
 	// because sometimes upon death or reaching nexus they don't get removed
-	new Array:monstersToBeRemoved = ArrayCreate(1, 8);
 	for (new i = 0; i < ArraySize(g_MonstersAlive); i++)
 	{
 		new className[32];
@@ -2368,9 +2376,7 @@ public FwCheckerThinkPre(id)
 			// It's not any of the monsters that we use in this game, so get the fuck out of here non-monster thingy
 			server_print("[%s] Data integrity error: #%d %s is not an AD-registered monster", PLUGIN_TAG, monster, className);
 		}
-		
 	}
-
 	set_pev(id, pev_nextthink, get_gametime() + 3.0);
 	return HAM_HANDLED;
 }
@@ -2629,7 +2635,7 @@ public MonsterThink(id)
 			g_OldEntityState[id][ENT_GAMETIME] = currTime;
 			g_OldEntityState[id][ENT_FLAGS] = flags;
 
-			if (isStuckAboveSky(id, currPos/*, velocity*/))
+			if (isStuckAboveSky(currPos))
 			{
 				server_print("[%s] Removing monster #%d from the freaking SKY... yeah, gotta fix monsters ending up there", PLUGIN_TAG, id);
 				removeMonster(id);
@@ -2647,12 +2653,14 @@ public MonsterThink(id)
 
 initGame()
 {
+	g_GameState = GAME_RUNNING;
+
 	flushGame();
 	initNexus();
 	set_pev(g_Nexus, pev_takedamage, DAMAGE_YES);
 
-	if (g_SyncHudEnd) ClearSyncHud(0, g_SyncHudEnd);
-	g_GameState = GAME_RUNNING;
+	if (g_SyncHudEnd) 
+		ClearSyncHud(0, g_SyncHudEnd);
 
 	new Float:setupTime = get_pcvar_float(pcvar_ad_setup_time);
 	g_RoundEndTime = get_gametime() + setupTime;
@@ -2661,11 +2669,37 @@ initGame()
 	formatex(difficultyName, charsmax(difficultyName), g_Difficulties[g_CurrDifficulty]);
 	ucfirst(difficultyName);
 
-	formatex(hostname, charsmax(hostname), "%s | Level: %s - Preparing...",
-		g_OriginalHostname, difficultyName);
+	formatex(hostname, charsmax(hostname), "%s | Level: %s - Preparing...", g_OriginalHostname, difficultyName);
 	set_pcvar_string(pcvar_hostname, hostname);
 
 	set_task(setupTime, "StartRound", TASKID_START_ROUND);
+}
+
+resetMenus()
+{
+	new players[MAX_PLAYERS], playersNum;
+	get_players(players, playersNum, "c");
+	for (new i = 0; i < playersNum; i++)
+	{
+		new id = players[i];
+		resetMenu(id);
+	}
+}
+
+resetMenu(id)
+{
+	new _dummy, menu;
+	player_menu_info(id, _dummy, menu);
+	server_print("initGame :: id=%d, menu=%d", id, menu);
+
+	if (menu > -1)
+	{
+		menu_destroy(menu);
+		server_print("menu destroyed, menu=%d", menu);
+
+		// TODO: maybe show the menu that they were previously managing instead of the main menu
+		ShowMainMenu(id);
+	}
 }
 
 // Returns the monster id or 0 if couldn't be created
@@ -2831,11 +2865,11 @@ monsterReachedNexus(id)
 }
 
 // TODO: improve this... in first place, why are there monsters above the sky?
-isStuckAboveSky(id, Float:origin[3]/*, Float:velocity[3]*/)
+isStuckAboveSky(Float:origin[3])
 {
 	if (equali(g_Map, "ag_defense_a", 12) || equali(g_Map, "ag_defense_01", 13))
-	{ // Checking against specific maps... I know, it doesn't look good
-		if (origin[2] >= -256.0/* && xs_vec_len(velocity) < 0.1*/)
+	{ // Checking specific maps... I know, it doesn't look good
+		if (origin[2] >= -256.0)
 			return true;
 	}
 	return false;
@@ -2902,7 +2936,7 @@ nexusDestroyed()
 	server_exec();
 	g_GameState = GAME_DEFEAT;
 
-	disappearNexus();
+	hideNexus();
 
 	spawnGibs(g_Nexus, "models/metalplategibs.mdl", 50, 100, 120, 140);
 
@@ -2914,7 +2948,7 @@ nexusDestroyed()
 		client_print(id, print_chat, "[%s] You have failed to clear the %s difficulty.", PLUGIN_TAG, g_Difficulties[g_CurrDifficulty]);
 		client_print(id, print_chat, "[%s] Your score in this last game: %d points.", PLUGIN_TAG, floatround(g_PlayerScore[id]));
 	}
-	endGame();
+	clearGame();
 }
 
 gameWon()
@@ -2956,7 +2990,7 @@ gameWon()
 	}
 	set_pev(g_Nexus, pev_health, get_pcvar_float(pcvar_ad_nexus_health));
 	set_pev(g_Nexus, pev_takedamage, DAMAGE_NO);
-	endGame();
+	clearGame();
 }
 
 endHudMessage()
@@ -2984,7 +3018,7 @@ endHudMessage()
 												isVictory ? "cleared" : "failed to clear",
 												difficulty,
 												g_CurrRound,
-												floatround(totalScore, floatround_round),
+												floatround(totalScore),
 												isVictory ? floatround(g_NexusEndHP, floatround_ceil) : 0,
 												msgScores);
 
@@ -3005,7 +3039,7 @@ endHudMessage()
 	ShowSyncHudMsg(0, g_SyncHudEnd, msgEnd);
 }
 
-endGame()
+clearGame()
 {
 	set_pcvar_string(pcvar_hostname, g_OriginalHostname);
 
@@ -3022,6 +3056,8 @@ endGame()
 		removeMonster(monster, false); // passing false 'cos we clear the whole array shortly after
 	}
 	ArrayClear(g_MonstersAlive);
+
+	resetMenus();
 }
 
 flushGame()
@@ -3036,15 +3072,15 @@ flushGame()
 		g_PlayerScore[id] = 0.0;
 		g_PlayerCredits[id] = 0.0;
 	}
-	g_GameState = GAME_IDLE;
+	//g_GameState = GAME_IDLE;
 	g_CurrRound = 0; // not index-based, 0 here just means non initialized
 	//g_CurrDifficulty = DEFAULT_DIFFICULTY;
 	g_RoundEndTime = 0.0;
 
-	endGame();
+	clearGame();
 }
 
-disappearNexus()
+hideNexus()
 {
 	set_pev(g_Nexus, pev_renderamt, 0);
 	set_pev(g_Nexus, pev_rendermode, 2); // TransTexture mode
@@ -3061,12 +3097,12 @@ bool:repairNexus(id)
 		return false;
 	}
 
-	new Float:hp, Float:hpExtra = get_pcvar_float(pcvar_ad_nexus_health) * 0.1;
+	new Float:hp, Float:hpExtra = nexusHealthPerRepair();
 	pev(g_Nexus, pev_health, hp);
 	set_pev(g_Nexus, pev_health, hp + hpExtra);
 
 	new playerName[32];
-	GetColorlessName(id, playerName, charsmax(playerName));
+	getColorlessName(id, playerName, charsmax(playerName));
 
 	client_print(0, print_chat, "[%s] %s has just repaired the Nexus, restoring %dhp!",
 		PLUGIN_TAG, playerName, floatround(hpExtra, floatround_floor));
@@ -3074,9 +3110,14 @@ bool:repairNexus(id)
 	return true;
 }
 
+Float:nexusHealthPerRepair()
+{
+	return get_pcvar_float(pcvar_ad_nexus_health) * 0.1;
+}
+
 bool:giveWeapon(id, const weaponName[])
 {
-	if (pev(id, pev_iuser1))
+	if (isSpectator(id))
 	{
 		client_print(id, print_chat, "[%s] Sorry, cannot buy %s while spectating.", PLUGIN_TAG, weaponName);
 		return false;
@@ -3225,8 +3266,8 @@ getScores(players[MAX_PLAYERS], playersNum, msgScores[], lenMsg)
 				continue; // this player has no score or is not the player we're searching, 'cos the score is not the same
 
 			new playerName[32];
-			GetColorlessName(id2, playerName, charsmax(playerName));
-			formatex(msgScores, lenMsg, "%s%s -- %d p\n", msgScores, playerName, floatround(score2, floatround_round));
+			getColorlessName(id2, playerName, charsmax(playerName));
+			formatex(msgScores, lenMsg, "%s%s -- %d p\n", msgScores, playerName, floatround(score2));
 		}
 	}
 	ArrayClear(scores);
@@ -3241,14 +3282,14 @@ updateAimingHUD(players[MAX_PLAYERS], playersNum)
 		new hudMsgTarget = id; // who is gonna be shown the info about the entity being aimed
 
 		new specMode = pev(id, pev_iuser1);
-		if (specMode = OBS_IN_EYE) // Spectating in first person will show the aiming HUD of the player being spectated
+		if (specMode = OBS_IN_EYE) // spectating in first person will show the aiming HUD of the player being spectated
 			hudMsgTarget = pev(id, pev_iuser2);
-		else if (specMode) // Spectating in any other mode won't show the aiming HUD
+		else if (specMode) // spectating in any other mode won't show the aiming HUD
 			continue;
 
 		new ent, unused;
 		get_user_aiming(id, ent, unused, 6000);
-		if(ent && pev_valid(ent))
+		if (ent && pev_valid(ent))
 		{
 			new className[32];
 			pev(ent, pev_classname, className, charsmax(className));
@@ -3268,14 +3309,413 @@ updateAimingHUD(players[MAX_PLAYERS], playersNum)
 				ShowSyncHudMsg(hudMsgTarget, g_SyncHudAimingInfo, msg);
 			}
 		}
-		/*
+	}
+}
+
+/////////////////////////////////////////////////////
+//	MENUS
+/////////////////////////////////////////////////////
+
+public ShowMainMenu(id)
+{
+	new modeText[64], modeName[32];
+	// We want to show the option to switch to the other mode, not the current one obviously
+	if (g_CurrMode == MODE_COMPETITIVE)
+		copy(modeName, charsmax(modeName), g_Modes[MODE_FUN]);
+	else
+		copy(modeName, charsmax(modeName), g_Modes[MODE_COMPETITIVE]);
+
+	formatex(modeText, charsmax(modeText), "Change to %s mode", modeName);
+
+	new menu = menu_create("Main menu:", "HandleMainMenu");
+
+	menu_additem(menu, "Play",					"play",			_, g_MainMenuItemCallback);	// 1
+	menu_additem(menu, "Advance round",			"advance",		_, g_MainMenuItemCallback);	// 2
+	menu_additem(menu, "Abort game",			"abort",		_, g_MainMenuItemCallback);	// 3
+	menu_additem(menu, "Change map",			"map");										// 4
+	menu_additem(menu, modeText,				modeName,		_, g_MainMenuItemCallback);	// 5
+	menu_additem(menu, "Shop",					"shop",			_, g_MainMenuItemCallback);	// 6
+	menu_additem(menu, "Remove last satchel",	"unsatchel",	_, g_MainMenuItemCallback);	// 7
+	menu_additem(menu, "Help",					"help",			_, g_MainMenuItemCallback);	// 8
+	menu_additem(menu, "Admin menu",			"admin", 		ADMIN_CFG);					// 9
+	menu_addblank(menu, 0);
+	menu_additem(menu, "Exit",					"exit");									// 0
+
+	menu_setprop(menu, MPROP_PERPAGE,	0); // no pagination, otherwise it puts the last 2 options in the next page
+	menu_setprop(menu, MPROP_NOCOLORS,	0);
+
+	menu_display(id, menu);
+
+	return PLUGIN_HANDLED;
+}
+
+public HandleMainMenu(id, menu, item)
+{
+	if (item == MENU_EXIT)
+	{
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	if (equal(itemKey, "play"))				// 1
+	{
+		if (g_GameState == GAME_STARTING || g_GameState == GAME_RUNNING)
+			client_cmd(id, "callvote agallow");
 		else
 		{
-			set_hudmessage(g_HudRGB[0], g_HudRGB[1], g_HudRGB[2], -1.0, 0.85, 0, 0.0, 0.1, 0.0, 0.0, -1);
-			ShowSyncHudMsg(hudMsgTarget, g_SyncHudAimingInfo, ""); // clear info
+			// TODO: implement a submenu to choose the difficulty
+			// TODO: then remove the Switch to fun/competitive and add a second submenu to choose the mode,
+			// but only when it has enough features and is polished enough for competitive to make sense
+
+			ShowDifficultyMenu(id);
+			menu_destroy(menu);
+			return PLUGIN_HANDLED;
 		}
-		*/
 	}
+	else if (equal(itemKey, "advance"))		// 2
+	{
+		// TODO: implement
+		client_print(id, print_chat, "[%s] Sorry, advancing instantly to the next round is not implemented yet.", PLUGIN_TAG);
+	}
+	else if (equal(itemKey, "abort"))		// 3
+		client_cmd(id, "callvote agabort");
+
+	else if (equal(itemKey, "map"))			// 4
+	{
+		if (equali(g_Map, "ag_defense_a6"))
+			client_cmd(id, "callvote agmap ag_defense_a3");
+		else
+			client_cmd(id, "callvote agmap ag_defense_a6");
+	}
+	else if (equal(itemKey, "competitive") || equal(itemKey, "fun"))	// 5
+	{
+		new voteCmd[72];
+		formatex(voteCmd, charsmax(voteCmd), "callvote agstart %s %s", g_Difficulties[g_CurrDifficulty], itemKey);
+		server_print("switching mode, vote command: %s", voteCmd);
+		client_cmd(id, voteCmd);
+	}
+	else if (equal(itemKey, "shop"))		// 6
+	{
+		ShowShopMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+	else if (equal(itemKey, "unsatchel"))	// 7
+		CmdUnsatchel(id);
+
+	else if (equal(itemKey, "help"))		// 8
+	{
+		//showHelp(id); // TODO: may have to do a submenu with different parts of the game to explain in case doesn't fit in 1500 chars
+		client_print(id, print_chat, "[%s] Sorry, the help area has not been implemented yet.", PLUGIN_TAG);
+	}
+	else if (equal(itemKey, "admin"))		// 9
+	{
+		ShowAdminMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+	else if (equal(itemKey, "exit"))		// 0
+	{
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+
+	server_print("[main menu] itemKey: %s, item: %d", itemKey, item);
+
+	ShowMainMenu(id);
+
+	return PLUGIN_HANDLED;
+}
+
+public MainMenuItemCallback(id, menu, item)
+{
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	if (equal(itemKey, "fun") || equal(itemKey, "competitive"))
+	{
+		// TODO: remove when "callvote agstart normal competitive" is fixed. The "competitive" argument is not reaching FwMsgVote()
+		return disableMenuItem(menu, item);
+	}
+
+	if (equal(itemKey, "advance") || equal(itemKey, "help"))
+	{
+		// TODO: implement remove this afterwards
+		return disableMenuItem(menu, item);
+	}
+
+	if (equal(itemKey, "unsatchel") && !(g_PlayerLastSatchel[id] && pev_valid(g_PlayerLastSatchel[id])))
+		return disableMenuItem(menu, item);
+
+	if (g_GameState == GAME_RUNNING)
+	{
+		if (equal(itemKey, "fun") || equal(itemKey, "competitive"))
+			return disableMenuItem(menu, item);
+	}
+	else
+	{
+		if (equal(itemKey, "advance")
+			|| equal(itemKey, "abort")
+			|| equal(itemKey, "shop"))
+		{
+			return disableMenuItem(menu, item);
+		}
+	}
+
+	return ITEM_IGNORE;
+}
+
+public ShowDifficultyMenu(id)
+{
+	new menu = menu_create("Choose a difficulty:", "HandleDifficultyMenu");
+
+	for (new i = 0; i < sizeof(g_Difficulties); i++)
+		menu_additem(menu, g_Difficulties[i], g_Difficulties[i]);
+
+	menu_setprop(menu, MPROP_NOCOLORS,	0);
+
+	menu_display(id, menu);
+
+	return PLUGIN_HANDLED;
+}
+
+public HandleDifficultyMenu(id, menu, item)
+{
+	if (item == MENU_EXIT)
+	{
+		ShowMainMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	new voteCmd[72]; // size: 8 of callvote, 32 for vote string, 32 for value string as seen in agvote.cpp
+	formatex(voteCmd, charsmax(voteCmd), "callvote agstart %s %s", itemKey, g_Modes[g_CurrMode]);
+
+	if (g_CurrMode == MODE_FUN)
+		add(voteCmd, charsmax(voteCmd), " full");
+	
+	client_cmd(id, voteCmd);
+
+	ShowMainMenu(id);
+
+	return PLUGIN_HANDLED;
+}
+
+public ShowShopMenu(id)
+{
+	new menu = menu_create("Buy items:", "HandleShopMenu");
+
+	// TODO: improve code, could probably be less than this; e.g.: a struct with the item properties
+	// and iterate a Trie contaning instances of that type to make the menu
+	new Float:gaussPrice, Float:egonPrice, Float:repairPrice;
+	TrieGetCell(g_ShopItems, "gauss", gaussPrice);
+	TrieGetCell(g_ShopItems, "egon", egonPrice);
+	TrieGetCell(g_ShopItems, "repair", repairPrice);
+
+	// TODO: check if this should be floatround_ceil, rounding to 2 decimals or none at all;
+	// maybe there are prices with decimals in the future, affected by some feature or whatever
+	new gaussText[32], egonText[32], repairText[32];
+	formatex(gaussText,		charsmax(gaussText),	"Gauss (%dc)",			floatround(gaussPrice));
+	formatex(egonText,		charsmax(egonText),		"Egon (%dc)",			floatround(egonPrice));
+	formatex(repairText,	charsmax(repairText),	"Nexus repair (%dc)",	floatround(repairPrice));
+
+	menu_additem(menu, gaussText,	"gauss",	_, g_ShopMenuItemCallback);
+	menu_additem(menu, egonText,	"egon",		_, g_ShopMenuItemCallback);
+	menu_additem(menu, repairText,	"repair",	_, g_ShopMenuItemCallback);
+
+	menu_setprop(menu, MPROP_NOCOLORS, 0);
+
+	menu_display(id, menu);
+
+	return PLUGIN_HANDLED;
+}
+
+public HandleShopMenu(id, menu, item)
+{
+	if (item == MENU_EXIT)
+	{
+		ShowMainMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	if (equal(itemKey, "gauss"))
+		CmdBuyGauss(id);
+
+	else if (equal(itemKey, "egon"))
+		CmdBuyEgon(id);
+
+	else if (equal(itemKey, "repair"))
+		CmdNexusRepair(id);
+
+	server_print("[shop menu] itemKey: %s, item: %d", itemKey, item);
+
+	ShowShopMenu(id);
+
+	return PLUGIN_HANDLED;
+}
+
+public ShopMenuItemCallback(id, menu, item)
+{
+	if (g_GameState != GAME_RUNNING)
+		return disableMenuItem(menu, item);
+
+	return ITEM_IGNORE;
+}
+
+public ShowAdminMenu(id)
+{
+	if (get_user_flags(id) < ADMIN_CFG)
+		return PLUGIN_CONTINUE;
+
+	new menu = menu_create("Admin menu:", "HandleAdminMenu");
+
+	menu_additem(menu, "Check game status",		"check");									// 1
+	menu_additem(menu, "Spawn a monster",		"spawn");									// 2
+	menu_additem(menu, "Remove a monster",		"remove",	_, g_AdminMenuItemCallback);	// 3
+	menu_additem(menu, "Start a test round",	"test",		_, g_AdminMenuItemCallback);	// 4
+	menu_additem(menu, "Remove garbage",		"clean");									// 5
+	menu_additem(menu, "Dump entities",			"dump");									// 6
+
+	menu_setprop(menu, MPROP_NOCOLORS, 0);
+
+	menu_display(id, menu);
+
+	return PLUGIN_HANDLED;
+}
+
+public HandleAdminMenu(id, menu, item)
+{
+	// TODO: implement
+
+	if (item == MENU_EXIT)
+	{
+		ShowMainMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+	
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	if (equal(itemKey, "check"))
+		client_cmd(id, "ad_check full");
+
+	else if (equal(itemKey, "spawn"))
+	{
+		// TODO: show a submenu with several pages to spawn any monster you want
+		//client_print(id, print_chat, "[%s] Sorry, the monster spawning menu isn't ready yet.", PLUGIN_TAG);
+		ShowSpawnMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+	else if (equal(itemKey, "remove"))
+	{
+		// TODO: show a submenu with several pages to remove any alive monster
+		client_print(id, print_chat, "[%s] Sorry, the monster removal menu isn't ready yet.", PLUGIN_TAG);
+	}
+	else if (equal(itemKey, "test"))
+		CmdTestRound(id);
+
+	else if (equal(itemKey, "clean"))
+		CmdRemoveGarbage(id);
+
+	else if (equal(itemKey, "dump"))
+		dumpEntities();
+
+	server_print("[admin menu] itemKey: %s, item: %d", itemKey, item);
+
+	ShowAdminMenu(id);
+
+	return PLUGIN_HANDLED;
+}
+
+public AdminMenuItemCallback(id, menu, item)
+{
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	if (equal(itemKey, "remove") && !ArraySize(g_MonstersAlive))
+		return disableMenuItem(menu, item);
+
+	else if (equal(itemKey, "test")/* && g_GameState = GAME_STARTING && g_GameState != GAME_RUNNING*/)
+		return disableMenuItem(menu, item);
+
+	return ITEM_IGNORE;
+}
+
+public ShowSpawnMenu(id)
+{
+	if (get_user_flags(id) < ADMIN_CFG)
+		return PLUGIN_CONTINUE;
+
+	new menu = menu_create("Monster spawning menu:", "HandleSpawnMenu");
+
+	new TrieIter:it = TrieIterCreate(g_MonsterData);
+	while (!TrieIterEnded(it))
+	{
+		new data[MONSTER_DATA];
+		TrieIterGetArray(it, data, MONSTER_DATA);
+		//new monsterType[24];
+		//copy(monsterType, charsmax(monsterType), data[MONSTER_ENTITY_NAME]);
+
+		//spawnMonster(id, monsterType);
+		//spawnMonster(id, data[MONSTER_ENTITY_NAME]);
+		// TODO: pretty print the monster name to show in the menu, e.g.: monster_alien_controller -> Alien Controller
+		menu_additem(menu, data[MONSTER_ENTITY_NAME], data[MONSTER_ENTITY_NAME]);	
+		
+		TrieIterNext(it);
+	}
+	TrieIterDestroy(it);
+
+	//menu_setprop(menu, MPROP_PERPAGE, 7);
+	menu_setprop(menu, MPROP_NOCOLORS, 0);
+
+	menu_display(id, menu);
+
+	return PLUGIN_HANDLED;
+}
+
+public HandleSpawnMenu(id, menu, item)
+{
+	if (item == MENU_EXIT)
+	{
+		ShowAdminMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	// Check in case it's possible to change the selection data that the client sends to the server
+	// and wants to spawn a non-cached monster, etc. leading to crash
+	if (TrieKeyExists(g_MonsterData, itemKey))
+		spawnMonster(id, itemKey);
+
+	ShowSpawnMenu(id);
+
+	return PLUGIN_HANDLED;
+}
+
+// A wrapper for returning ITEM_DISABLED, but greying out the menu item, as the AMXX menu system doesn't do it surprisingly
+disableMenuItem(menu, item)
+{
+	new itemName[64];
+	menu_item_getinfo(menu, item, _, _, _, itemName, charsmax(itemName));
+	format(itemName, charsmax(itemName), "\\d%s\\w", itemName); // make this text grey, then continue with white
+	menu_item_setname(menu, item, itemName);
+
+	return ITEM_DISABLED;
 }
 
 /////////////////////////////////////////////////////
@@ -3370,9 +3810,9 @@ spawnGibs(id, model[], minSpread, maxSpread, minGibs, maxGibs)
 	pev(id, pev_origin, fOrigin);
 
 	new origin[3];
-	origin[0] = floatround(fOrigin[0], floatround_round);
-	origin[1] = floatround(fOrigin[1], floatround_round);
-	origin[2] = floatround(fOrigin[2], floatround_round);
+	origin[0] = floatround(fOrigin[0]);
+	origin[1] = floatround(fOrigin[1]);
+	origin[2] = floatround(fOrigin[2]);
 
 	new modelData[2];
 	TrieGetArray(g_Gibs, model, modelData, sizeof(modelData));
@@ -3406,7 +3846,7 @@ spawnGibs(id, model[], minSpread, maxSpread, minGibs, maxGibs)
 	message_end();
 }
 
-GetColorlessName(id, name[], len)
+getColorlessName(id, name[], len)
 {
 	get_user_name(id, name, len);
 
