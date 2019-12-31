@@ -3393,7 +3393,7 @@ public HandleMainMenu(id, menu, item)
 	else if (equal(itemKey, "competitive") || equal(itemKey, "fun"))	// 5
 	{
 		new voteCmd[72];
-		formatex(voteCmd, charsmax(voteCmd), "callvote agstart %s %s", g_Difficulties[g_CurrDifficulty], itemKey);
+		formatex(voteCmd, charsmax(voteCmd), "callvote \"agstart\" \"%s %s\"", g_Difficulties[g_CurrDifficulty], itemKey);
 		server_print("switching mode, vote command: %s", voteCmd);
 		client_cmd(id, voteCmd);
 	}
@@ -3435,12 +3435,6 @@ public MainMenuItemCallback(id, menu, item)
 	new itemKey[32];
 	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
 
-	if (equal(itemKey, "fun") || equal(itemKey, "competitive"))
-	{
-		// TODO: remove when "callvote agstart normal competitive" is fixed. The "competitive" argument is not reaching FwMsgVote()
-		return disableMenuItem(menu, item);
-	}
-
 	if (equal(itemKey, "advance") || equal(itemKey, "help"))
 	{
 		// TODO: implement remove this afterwards
@@ -3472,6 +3466,7 @@ public ShowDifficultyMenu(id)
 {
 	new menu = menu_create("Choose a difficulty:", "HandleDifficultyMenu");
 
+	// TODO: pretty print menu options
 	for (new i = 0; i < sizeof(g_Difficulties); i++)
 		menu_additem(menu, g_Difficulties[i], g_Difficulties[i]);
 
@@ -3495,7 +3490,7 @@ public HandleDifficultyMenu(id, menu, item)
 	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
 
 	new voteCmd[72]; // size: 8 of callvote, 32 for vote string, 32 for value string as seen in agvote.cpp
-	formatex(voteCmd, charsmax(voteCmd), "callvote agstart %s %s", itemKey, g_Modes[g_CurrMode]);
+	formatex(voteCmd, charsmax(voteCmd), "callvote \"agstart\" \"%s %s\"", itemKey, g_Modes[g_CurrMode]);
 
 	if (g_CurrMode == MODE_FUN)
 		add(voteCmd, charsmax(voteCmd), " full");
