@@ -764,6 +764,7 @@ public plugin_init()
 
 	register_clcmd("say /menu",			"ShowMainMenu");
 	register_clcmd("say /play",			"ShowDifficultyMenu");
+	register_clcmd("say /mode",			"ShowModeMenu");
 	register_clcmd("say /shop",			"ShowShopMenu");
 	register_clcmd("say /admin",		"ShowAdminMenu",	ADMIN_CFG,	"- shows the admin menu");
 	register_clcmd("say /spawn",		"ShowSpawnMenu",	ADMIN_CFG,	"- shows the monster spawning menu");
@@ -1260,6 +1261,8 @@ public FwMsgCountdown(id, dest, ent)
 		formatex(hostname, charsmax(hostname), "%s | Level: %s - Starting game...",
 			g_OriginalHostname, difficultyName);
 		set_pcvar_string(pcvar_hostname, hostname);
+
+		resetMenus();
 	}
 
 	server_print("[%.4f] Countdown::id=%d,dest=%d,ent=%d,c=%d,snd=%d,p1=%s,p2=%s",
@@ -1280,8 +1283,12 @@ public FwMsgSettings(id, dest, ent)
 	isMatch = get_msg_arg_int(1);
 	if (!isMatch)
 	{
+		new oldGameState = g_GameState;
 		g_GameState = GAME_IDLE;
 		set_pcvar_string(pcvar_hostname, g_OriginalHostname);
+
+		if (oldGameState != GAME_IDLE) // avoid resetting on first call at around 7 seconds after a changelevel
+			resetMenus();
 	}
 	server_print("[%.4f] Settings::id=%d,dest=%d,ent=%d,isMatch=%d", get_gametime(), id, dest, ent, isMatch);
 }
@@ -1307,9 +1314,6 @@ public FwMsgVote(id)
 */
 	if (equali(setting, "agstart") && status == AGVOTE_ACCEPTED)
 	{
-		if (containi(value, "full") != -1) // TODO: handle agstart full; not allowed for the moment
-			set_msg_arg_string(6, "");
-
 		if (containi(value, g_Modes[MODE_COMPETITIVE]) != -1)
 			g_CurrMode = MODE_COMPETITIVE;
 		else
@@ -1319,6 +1323,10 @@ public FwMsgVote(id)
 		{
 			if (containi(value, g_Difficulties[i]) != -1)
 			{
+				// FIXME: Hack for 'very hard' to not be matched with 'hard'
+				if (equali(g_Difficulties[i], "hard") && containi(value, "very hard") != -1)
+					continue; // the next one will match with the actual 'very hard'
+
 				g_NextDifficulty = i;
 				break;
 			}
@@ -3318,26 +3326,16 @@ updateAimingHUD(players[MAX_PLAYERS], playersNum)
 
 public ShowMainMenu(id)
 {
-	new modeText[64], modeName[32];
-	// We want to show the option to switch to the other mode, not the current one obviously
-	if (g_CurrMode == MODE_COMPETITIVE)
-		copy(modeName, charsmax(modeName), g_Modes[MODE_FUN]);
-	else
-		copy(modeName, charsmax(modeName), g_Modes[MODE_COMPETITIVE]);
-
-	formatex(modeText, charsmax(modeText), "Change to %s mode", modeName);
-
 	new menu = menu_create("Main menu:", "HandleMainMenu");
 
 	menu_additem(menu, "Play",					"play",			_, g_MainMenuItemCallback);	// 1
 	menu_additem(menu, "Advance round",			"advance",		_, g_MainMenuItemCallback);	// 2
 	menu_additem(menu, "Abort game",			"abort",		_, g_MainMenuItemCallback);	// 3
 	menu_additem(menu, "Change map",			"map");										// 4
-	menu_additem(menu, modeText,				modeName,		_, g_MainMenuItemCallback);	// 5
-	menu_additem(menu, "Shop",					"shop",			_, g_MainMenuItemCallback);	// 6
-	menu_additem(menu, "Remove last satchel",	"unsatchel",	_, g_MainMenuItemCallback);	// 7
-	menu_additem(menu, "Help",					"help",			_, g_MainMenuItemCallback);	// 8
-	menu_additem(menu, "Admin menu",			"admin", 		ADMIN_CFG);					// 9
+	menu_additem(menu, "Shop",					"shop",			_, g_MainMenuItemCallback);	// 5
+	menu_additem(menu, "Remove last satchel",	"unsatchel",	_, g_MainMenuItemCallback);	// 6
+	menu_additem(menu, "Help",					"help",			_, g_MainMenuItemCallback);	// 7
+	menu_additem(menu, "Admin menu",			"admin", 		ADMIN_CFG);					// 8
 	menu_addblank(menu, 0);
 	menu_additem(menu, "Exit",					"exit");									// 0
 
@@ -3390,28 +3388,21 @@ public HandleMainMenu(id, menu, item)
 		else
 			client_cmd(id, "callvote agmap ag_defense_a6");
 	}
-	else if (equal(itemKey, "competitive") || equal(itemKey, "fun"))	// 5
-	{
-		new voteCmd[72];
-		formatex(voteCmd, charsmax(voteCmd), "callvote \"agstart\" \"%s %s\"", g_Difficulties[g_CurrDifficulty], itemKey);
-		server_print("switching mode, vote command: %s", voteCmd);
-		client_cmd(id, voteCmd);
-	}
-	else if (equal(itemKey, "shop"))		// 6
+	else if (equal(itemKey, "shop"))		// 5
 	{
 		ShowShopMenu(id);
 		menu_destroy(menu);
 		return PLUGIN_HANDLED;
 	}
-	else if (equal(itemKey, "unsatchel"))	// 7
+	else if (equal(itemKey, "unsatchel"))	// 6
 		CmdUnsatchel(id);
 
-	else if (equal(itemKey, "help"))		// 8
+	else if (equal(itemKey, "help"))		// 7
 	{
 		//showHelp(id); // TODO: may have to do a submenu with different parts of the game to explain in case doesn't fit in 1500 chars
 		client_print(id, print_chat, "[%s] Sorry, the help area has not been implemented yet.", PLUGIN_TAG);
 	}
-	else if (equal(itemKey, "admin"))		// 9
+	else if (equal(itemKey, "admin"))		// 8
 	{
 		ShowAdminMenu(id);
 		menu_destroy(menu);
@@ -3437,26 +3428,23 @@ public MainMenuItemCallback(id, menu, item)
 
 	if (equal(itemKey, "advance") || equal(itemKey, "help"))
 	{
-		// TODO: implement remove this afterwards
+		// TODO: implement; remove this afterwards
 		return disableMenuItem(menu, item);
 	}
 
 	if (equal(itemKey, "unsatchel") && !(g_PlayerLastSatchel[id] && pev_valid(g_PlayerLastSatchel[id])))
 		return disableMenuItem(menu, item);
 
-	if (g_GameState == GAME_RUNNING)
-	{
-		if (equal(itemKey, "fun") || equal(itemKey, "competitive"))
-			return disableMenuItem(menu, item);
-	}
-	else
+	if (g_GameState != GAME_RUNNING)
 	{
 		if (equal(itemKey, "advance")
-			|| equal(itemKey, "abort")
 			|| equal(itemKey, "shop"))
 		{
 			return disableMenuItem(menu, item);
 		}
+
+		if (g_GameState != GAME_STARTING && equal(itemKey, "abort"))
+			return disableMenuItem(menu, item);
 	}
 
 	return ITEM_IGNORE;
@@ -3489,10 +3477,50 @@ public HandleDifficultyMenu(id, menu, item)
 	new itemKey[32];
 	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
 
-	new voteCmd[72]; // size: 8 of callvote, 32 for vote string, 32 for value string as seen in agvote.cpp
-	formatex(voteCmd, charsmax(voteCmd), "callvote \"agstart\" \"%s %s\"", itemKey, g_Modes[g_CurrMode]);
+	ShowModeMenu(id, itemKey);
 
-	if (g_CurrMode == MODE_FUN)
+	return PLUGIN_HANDLED;
+}
+
+public ShowModeMenu(id, args[])
+{
+	new menu = menu_create("Choose a mode:", "HandleModeMenu");
+
+	// TODO: pretty print menu options
+	for (new i = 0; i < sizeof(g_Modes); i++)
+	{
+		new info[32];
+		if (args[0])
+			format(info, charsmax(info), "%s %s", args, g_Modes[i]);
+		else
+			add(info, charsmax(info), g_Modes[i]);
+
+		menu_additem(menu, g_Modes[i], info);
+	}
+
+	menu_setprop(menu, MPROP_NOCOLORS, 0);
+
+	menu_display(id, menu);
+
+	return PLUGIN_HANDLED;
+}
+
+public HandleModeMenu(id, menu, item)
+{
+	if (item == MENU_EXIT)
+	{
+		ShowMainMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	new voteCmd[72]; // size: 8 of callvote, 32 for vote string, 32 for value string as seen in agvote.cpp
+	formatex(voteCmd, charsmax(voteCmd), "callvote \"agstart\" \"%s\"", itemKey);
+
+	if (containi(itemKey, g_Modes[MODE_FUN]))
 		add(voteCmd, charsmax(voteCmd), " full");
 	
 	client_cmd(id, voteCmd);
@@ -3603,7 +3631,7 @@ public HandleAdminMenu(id, menu, item)
 	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
 
 	if (equal(itemKey, "check"))
-		client_cmd(id, "ad_check full");
+		client_cmd(id, "ad_check");
 
 	else if (equal(itemKey, "spawn"))
 	{
