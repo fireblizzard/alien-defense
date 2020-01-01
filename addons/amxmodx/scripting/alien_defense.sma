@@ -571,7 +571,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.2-alpha";
+new const VERSION[]					= "0.9.3-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -3368,10 +3368,11 @@ public ShowMainMenu(id)
 	menu_additem(menu, "Remove last satchel",	"unsatchel",	_, g_MainMenuItemCallback);	// 6
 	menu_additem(menu, "Help",					"help",			_, g_MainMenuItemCallback);	// 7
 	menu_additem(menu, "Admin menu",			"admin", 		ADMIN_CFG);					// 8
-	menu_addblank(menu, 0);
+	menu_addblank2(menu);
 	menu_additem(menu, "Exit",					"exit");									// 0
 
 	menu_setprop(menu, MPROP_PERPAGE,	0); // no pagination, otherwise it puts the last 2 options in the next page
+	menu_setprop(menu, MPROP_EXIT, MEXIT_NEVER); // fixes *sometimes* appearing a second Exit option
 	menu_setprop(menu, MPROP_NOCOLORS,	0);
 
 	menu_display(id, menu);
@@ -3625,7 +3626,16 @@ public HandleShopMenu(id, menu, item)
 
 public ShopMenuItemCallback(id, menu, item)
 {
+	// TODO: refresh THIS menu when there are enough credits to buy some item that was disabled
+
 	if (g_GameState != GAME_RUNNING)
+		return disableMenuItem(menu, item);
+
+	new itemKey[32], Float:price;
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+	TrieGetCell(g_ShopItems, itemKey, price);
+
+	if (g_PlayerCredits[id] < price)
 		return disableMenuItem(menu, item);
 
 	return ITEM_IGNORE;
