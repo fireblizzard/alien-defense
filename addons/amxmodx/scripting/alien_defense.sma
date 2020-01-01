@@ -571,7 +571,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.1-alpha";
+new const VERSION[]					= "0.9.2-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -1325,6 +1325,9 @@ public FwMsgVote(id)
 
 	if (equali(setting, "agstart") && status == AGVOTE_ACCEPTED)
 	{
+		if (g_GameState == GAME_RUNNING) // new agstart without aborting the currently ongoing game
+			clearGame();
+
 		if (containi(value, g_Modes[MODE_COMPETITIVE]) != -1)
 			g_CurrMode = MODE_COMPETITIVE;
 		else
