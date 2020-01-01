@@ -571,7 +571,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.0-alpha";
+new const VERSION[]					= "0.9.1-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -619,6 +619,7 @@ new g_CurrRound;
 new g_CurrDifficulty = DEFAULT_DIFFICULTY;
 new g_CurrMode = MODE_FUN;
 new Float:g_RoundEndTime;
+new bool:g_IsAgstartFull;
 new g_Nexus;
 new g_TaskEntity;
 new g_HudEntity;
@@ -1290,6 +1291,9 @@ public FwMsgSettings(id, dest, ent)
 		if (oldGameState != GAME_IDLE) // avoid resetting on first call at around 7 seconds after a changelevel
 			resetMenus();
 	}
+	//else if (g_CurrMode == MODE_COMPETITIVE)
+	//	prepareCompetitive();
+
 	server_print("[%.4f] Settings::id=%d,dest=%d,ent=%d,isMatch=%d", get_gametime(), id, dest, ent, isMatch);
 }
 
@@ -1303,15 +1307,22 @@ public FwMsgVote(id)
 	get_msg_arg_string(5, setting,	charsmax(setting));
 	get_msg_arg_string(6, value,	charsmax(value));
 	get_msg_arg_string(7, caller,	charsmax(caller));
-
-	server_print("[%.4f] Vote::id=%d,status=%d,yes=%d,no=%d,n/a=%d,k=%s,v=%s,caller=%s",
-		get_gametime(), id, status, yes, no, undecided, setting, value, caller);
 /*
 	if (status == AGVOTE_CALLED)
 		g_AgVoteRunning = true;
 	else
 		g_AgVoteRunning = false;
 */
+/*	// Not really working, only for the vote HUD
+	if (containi(value, g_Modes[MODE_COMPETITIVE]) != -1 && containi(value, "full") != -1)
+	{ // Remove 'full' argument
+		replace(value, charsmax(value), "full", "");
+		set_msg_arg_string(6, value);
+	}
+*/
+	server_print("[%.4f] Vote::id=%d,status=%d,yes=%d,no=%d,n/a=%d,k=%s,v=%s,caller=%s",
+		get_gametime(), id, status, yes, no, undecided, setting, value, caller);
+
 	if (equali(setting, "agstart") && status == AGVOTE_ACCEPTED)
 	{
 		if (containi(value, g_Modes[MODE_COMPETITIVE]) != -1)
@@ -1319,13 +1330,15 @@ public FwMsgVote(id)
 		else
 			g_CurrMode = MODE_FUN;
 
+		g_IsAgstartFull = bool:(containi(value, "full") != -1);
+
 		for (new i = 0; i < sizeof(g_Difficulties); i++)
 		{
 			if (containi(value, g_Difficulties[i]) != -1)
 			{
 				// FIXME: Hack for 'very hard' to not be matched with 'hard'
 				if (equali(g_Difficulties[i], "hard") && containi(value, "very hard") != -1)
-					continue; // the next one will match with the actual 'very hard'
+					continue; // the next one will match with the actual 'very hard', due to array order
 
 				g_NextDifficulty = i;
 				break;
@@ -1342,6 +1355,19 @@ public FwMsgVote(id)
 		client_print(0, print_chat, "[%s] Starting a %s game. Have fun!", PLUGIN_TAG, difficulty);
 
 		server_print("[%.4f] Vote:AgStart::value=%s,difficulty=%d,mode=%d", get_gametime(), value, g_CurrDifficulty, g_CurrMode);
+
+		if (g_CurrMode == MODE_COMPETITIVE && g_IsAgstartFull)
+		{
+			// Someone's trying to trick the system... we'll restart now without 'full' as we're in competitive
+			server_cmd("agabort");
+			server_exec();
+
+			replace(value, charsmax(value), "full", "");
+			server_cmd("agstart \"%s\"", value);
+			server_exec();
+
+			return;
+		}
 	}
 }
 
@@ -1721,33 +1747,16 @@ public CmdSpawnBot(id, level, cid)
 */
 public CmdStart(id)
 {
-	new arg1[32], arg2[32], fullArg[64];
-	read_argv(1, arg1, charsmax(arg1)); // e.g.: very
-	read_argv(2, arg2, charsmax(arg2)); // e.g.: hard
-
-	if (equali(arg1, "full")) // for the moment not allowing players to start with full weapons
-		formatex(arg1, charsmax(arg1), "");
-
-	if (arg2[0])
-		formatex(fullArg, charsmax(fullArg), "%s %s", arg1, arg2);
-	else
-		formatex(fullArg, charsmax(fullArg), arg1);
-
 	// This has to be done after taking args, otherwise they
 	// will get replaced with the args of the kick command
 	if (g_Bot)
 	{
-		server_cmd("kick #%d \"Another bot spawned.\"", get_user_userid(g_Bot));
+		server_cmd("kick #%d \"Voting agstart.\"", get_user_userid(g_Bot));
 		server_exec();
 		g_Bot = 0;
 	}
 
-	server_print("adstart %s", fullArg);
-
-	if (!fullArg[0])
-		client_cmd(id, "callvote agstart");
-	else
-		client_cmd(id, "callvote agstart %s", fullArg);
+	client_cmd(id, "callvote \"agstart\" \"normal fun full\"");
 
 	return PLUGIN_HANDLED;
 }
@@ -2667,6 +2676,9 @@ initGame()
 	initNexus();
 	set_pev(g_Nexus, pev_takedamage, DAMAGE_YES);
 
+	//if (g_CurrMode == MODE_COMPETITIVE)
+	//	prepareCompetitive();
+
 	if (g_SyncHudEnd) 
 		ClearSyncHud(0, g_SyncHudEnd);
 
@@ -2681,6 +2693,22 @@ initGame()
 	set_pcvar_string(pcvar_hostname, hostname);
 
 	set_task(setupTime, "StartRound", TASKID_START_ROUND);
+}
+
+prepareCompetitive()
+{
+	new players[MAX_PLAYERS], playersNum;
+	get_players(players, playersNum, "c");
+	for (new i = 0; i < playersNum; i++)
+	{
+		new id = players[i];
+		if (isSpectator(id)) // TODO: check agstart with 'nolock' argument
+			continue;
+
+		new hasStripped = hl_strip_user_weapons(id);
+
+		server_print("weapon stripped for player #%d? %d", id, hasStripped);
+	}
 }
 
 resetMenus()
@@ -3084,6 +3112,7 @@ flushGame()
 	g_CurrRound = 0; // not index-based, 0 here just means non initialized
 	//g_CurrDifficulty = DEFAULT_DIFFICULTY;
 	g_RoundEndTime = 0.0;
+	g_IsAgstartFull = false;
 
 	clearGame();
 }
@@ -3491,7 +3520,7 @@ public ShowModeMenu(id, args[])
 	{
 		new info[32];
 		if (args[0])
-			format(info, charsmax(info), "%s %s", args, g_Modes[i]);
+			formatex(info, charsmax(info), "%s %s", args, g_Modes[i]);
 		else
 			add(info, charsmax(info), g_Modes[i]);
 
@@ -3517,11 +3546,15 @@ public HandleModeMenu(id, menu, item)
 	new itemKey[32];
 	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
 
-	new voteCmd[72]; // size: 8 of callvote, 32 for vote string, 32 for value string as seen in agvote.cpp
-	formatex(voteCmd, charsmax(voteCmd), "callvote \"agstart\" \"%s\"", itemKey);
+	// Size 72 -> 8 for callvote, 32 for vote string (e.g.: "agstart"), 32 for value string as seen in agvote.cpp (e.g.: "hard full")
+	new voteCmd[72], fullArg[6];
 
-	if (containi(itemKey, g_Modes[MODE_FUN]))
-		add(voteCmd, charsmax(voteCmd), " full");
+	if (containi(itemKey, g_Modes[MODE_FUN]) != -1)
+		formatex(fullArg, charsmax(fullArg), " full");
+
+	formatex(voteCmd, charsmax(voteCmd), "callvote \"agstart\" \"%s%s\"", itemKey, fullArg);
+
+	server_print("HandleModeMenu :: itemKey=%s, voteCmd=%s", itemKey, voteCmd);
 	
 	client_cmd(id, voteCmd);
 
