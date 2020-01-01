@@ -213,9 +213,10 @@ enum
 new const g_GameStateString[][] =
 {
 	"idle",
+	"starting",
 	"running",
-	"defeat",
 	"aborted",
+	"defeat",
 	"victory"
 };
 
@@ -590,7 +591,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.4-alpha";
+new const VERSION[]					= "0.9.5-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -1905,7 +1906,8 @@ public CmdCheckGame(id)
 	console_print(id, "[%s] Current game info:", PLUGIN_TAG);
 	console_print(id, " - Game state: %s",			g_GameStateString[g_GameState]);
 	console_print(id, " - Round: %d / %d",			g_CurrRound, g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS]);
-	console_print(id, " - Difficulty: %d",			g_CurrDifficulty);
+	console_print(id, " - Difficulty: %s",			g_DifficultiesPretty[g_CurrDifficulty]);
+	console_print(id, " - Mode: %s",				g_ModesPretty[g_CurrMode]);
 	console_print(id, " - Current time: %.3fs",		get_gametime());
 	console_print(id, " - Round end time: %.3fs",	g_RoundEndTime);
 	console_print(id, " - Nexus HP: %.2f / %.2f",	nexusHP, get_pcvar_float(pcvar_ad_nexus_health));
