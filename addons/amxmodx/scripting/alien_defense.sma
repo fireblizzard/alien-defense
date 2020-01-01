@@ -440,7 +440,7 @@ new const g_Sounds[][] =
 	"houndeye/he_pain1.wav",
 	"houndeye/he_pain3.wav",
 	"houndeye/he_pain4.wav",
-	"houndeye/he_pain5.wav",/*
+	"houndeye/he_pain5.wav",/* should be cached already?
 	"player/pl_dirt1.wav",
 	"player/pl_dirt2.wav",
 	"player/pl_dirt3.wav",
@@ -549,9 +549,28 @@ new const g_Difficulties[][] = {
 	"impossible"
 };
 
+new const g_DifficultiesPretty[][] = {
+	"Survival",
+	"Test",
+	"Very easy",
+	"Easy",
+	"Normal",
+	"Hard",
+	"Very hard",
+	"Elite",
+	"Insane",
+	"Nightmare",
+	"Impossible"
+};
+
 new const g_Modes[][] = {
 	"fun",
 	"competitive"
+};
+
+new const g_ModesPretty[][] = {
+	"Fun",
+	"Competitive"
 };
 
 new g_DifficultyStats[][DIFFICULTY] = {
@@ -571,7 +590,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.3-alpha";
+new const VERSION[]					= "0.9.4-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -769,7 +788,7 @@ public plugin_init()
 	register_clcmd("say /shop",			"ShowShopMenu");
 	register_clcmd("say /admin",		"ShowAdminMenu",	ADMIN_CFG,	"- shows the admin menu");
 	register_clcmd("say /spawn",		"ShowSpawnMenu",	ADMIN_CFG,	"- shows the monster spawning menu");
-	//register_clcmd("remove_menu",	"ShowRemoveMenu");
+	register_clcmd("say /remove",		"ShowRemoveMenu",	ADMIN_CFG,	"- shows the monster removal menu");
 
 	g_MainMenuItemCallback		= menu_makecallback("MainMenuItemCallback");
 	g_ShopMenuItemCallback		= menu_makecallback("ShopMenuItemCallback");
@@ -1039,7 +1058,7 @@ configureMonsters()
 	//insertMonsterData("monster_charger",			"models/charger.mdl",		15.0,	110.0,	250.0,	true, false);
 	//insertMonsterData("monster_chumtoad",			"models/chumtoad.mdl",		10.0,	95.0,	240.0,	true, false);
 	insertMonsterData("monster_friendly",			"models/friendly.mdl",		40.0,	450.0,	240.0,	true, false);
-	//insertMonsterData("monster_gasbag",				"models/gasbag.mdl",		20.0,	280.0,	160.0,	true, true);
+	//insertMonsterData("monster_gasbag",			"models/gasbag.mdl",		20.0,	280.0,	160.0,	true, true);
 	insertMonsterData("monster_hunter",				"models/hunter.mdl",		40.0,	500.0,	280.0,	true, false);
 	insertMonsterData("monster_kingpin",			"models/kingpin.mdl",		35.0,	320.0,	260.0,	true, false);
 	insertMonsterData("monster_pantagruel",			"models/pantagruel.mdl",	180.0,	1600.0,	170.0,	true, false);
@@ -1291,8 +1310,6 @@ public FwMsgSettings(id, dest, ent)
 		if (oldGameState != GAME_IDLE) // avoid resetting on first call at around 7 seconds after a changelevel
 			resetMenus();
 	}
-	//else if (g_CurrMode == MODE_COMPETITIVE)
-	//	prepareCompetitive();
 
 	server_print("[%.4f] Settings::id=%d,dest=%d,ent=%d,isMatch=%d", get_gametime(), id, dest, ent, isMatch);
 }
@@ -2679,9 +2696,6 @@ initGame()
 	initNexus();
 	set_pev(g_Nexus, pev_takedamage, DAMAGE_YES);
 
-	//if (g_CurrMode == MODE_COMPETITIVE)
-	//	prepareCompetitive();
-
 	if (g_SyncHudEnd) 
 		ClearSyncHud(0, g_SyncHudEnd);
 
@@ -2696,22 +2710,6 @@ initGame()
 	set_pcvar_string(pcvar_hostname, hostname);
 
 	set_task(setupTime, "StartRound", TASKID_START_ROUND);
-}
-
-prepareCompetitive()
-{
-	new players[MAX_PLAYERS], playersNum;
-	get_players(players, playersNum, "c");
-	for (new i = 0; i < playersNum; i++)
-	{
-		new id = players[i];
-		if (isSpectator(id)) // TODO: check agstart with 'nolock' argument
-			continue;
-
-		new hasStripped = hl_strip_user_weapons(id);
-
-		server_print("weapon stripped for player #%d? %d", id, hasStripped);
-	}
 }
 
 resetMenus()
@@ -2904,7 +2902,7 @@ monsterReachedNexus(id)
 }
 
 // TODO: improve this... in first place, why are there monsters above the sky?
-isStuckAboveSky(Float:origin[3])
+bool:isStuckAboveSky(Float:origin[3])
 {
 	if (equali(g_Map, "ag_defense_a", 12) || equali(g_Map, "ag_defense_01", 13))
 	{ // Checking specific maps... I know, it doesn't look good
@@ -3487,9 +3485,8 @@ public ShowDifficultyMenu(id)
 {
 	new menu = menu_create("Choose a difficulty:", "HandleDifficultyMenu");
 
-	// TODO: pretty print menu options
 	for (new i = 0; i < sizeof(g_Difficulties); i++)
-		menu_additem(menu, g_Difficulties[i], g_Difficulties[i]);
+		menu_additem(menu, g_DifficultiesPretty[i], g_Difficulties[i]);
 
 	menu_setprop(menu, MPROP_NOCOLORS,	0);
 
@@ -3519,7 +3516,6 @@ public ShowModeMenu(id, args[])
 {
 	new menu = menu_create("Choose a mode:", "HandleModeMenu");
 
-	// TODO: pretty print menu options
 	for (new i = 0; i < sizeof(g_Modes); i++)
 	{
 		new info[32];
@@ -3528,7 +3524,7 @@ public ShowModeMenu(id, args[])
 		else
 			add(info, charsmax(info), g_Modes[i]);
 
-		menu_additem(menu, g_Modes[i], info);
+		menu_additem(menu, g_ModesPretty[i], info);
 	}
 
 	menu_setprop(menu, MPROP_NOCOLORS, 0);
@@ -3664,8 +3660,6 @@ public ShowAdminMenu(id)
 
 public HandleAdminMenu(id, menu, item)
 {
-	// TODO: implement
-
 	if (item == MENU_EXIT)
 	{
 		ShowMainMenu(id);
@@ -3689,8 +3683,15 @@ public HandleAdminMenu(id, menu, item)
 	}
 	else if (equal(itemKey, "remove"))
 	{
-		// TODO: show a submenu with several pages to remove any alive monster
-		client_print(id, print_chat, "[%s] Sorry, the monster removal menu isn't ready yet.", PLUGIN_TAG);
+		// This code is twice because doing the change to admin menu
+		// in the ShowRemoveMenu() doesn't work for some reason
+		if (ArraySize(g_MonstersAlive))
+			ShowRemoveMenu(id);
+		else
+			ShowAdminMenu(id);
+
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
 	}
 	else if (equal(itemKey, "test"))
 		CmdTestRound(id);
@@ -3734,19 +3735,20 @@ public ShowSpawnMenu(id)
 	{
 		new data[MONSTER_DATA];
 		TrieIterGetArray(it, data, MONSTER_DATA);
-		//new monsterType[24];
-		//copy(monsterType, charsmax(monsterType), data[MONSTER_ENTITY_NAME]);
 
-		//spawnMonster(id, monsterType);
-		//spawnMonster(id, data[MONSTER_ENTITY_NAME]);
+		if (equal(data[MONSTER_ENTITY_NAME], "monster_generic"))
+		{ // Spawning this entity crashes the game, so skip
+			TrieIterNext(it);
+			continue;
+		}
+
 		// TODO: pretty print the monster name to show in the menu, e.g.: monster_alien_controller -> Alien Controller
-		menu_additem(menu, data[MONSTER_ENTITY_NAME], data[MONSTER_ENTITY_NAME]);	
+		menu_additem(menu, data[MONSTER_ENTITY_NAME], data[MONSTER_ENTITY_NAME]);
 		
 		TrieIterNext(it);
 	}
 	TrieIterDestroy(it);
 
-	//menu_setprop(menu, MPROP_PERPAGE, 7);
 	menu_setprop(menu, MPROP_NOCOLORS, 0);
 
 	menu_display(id, menu);
@@ -3772,6 +3774,52 @@ public HandleSpawnMenu(id, menu, item)
 		spawnMonster(id, itemKey);
 
 	ShowSpawnMenu(id);
+
+	return PLUGIN_HANDLED;
+}
+
+public ShowRemoveMenu(id)
+{
+	if (get_user_flags(id) < ADMIN_CFG)
+		return PLUGIN_CONTINUE;
+
+	new menu = menu_create("Monster removal menu:", "HandleRemoveMenu");
+
+	for (new i = 0; i < ArraySize(g_MonstersAlive); i++)
+	{
+		new monster = ArrayGetCell(g_MonstersAlive, i);
+		new itemInfo[5], itemName[48];
+		formatex(itemInfo, charsmax(itemInfo), "%d", monster);
+		formatex(itemName, charsmax(itemName), "%s (id: %d, hp: %.2f)",
+			g_MonsterClass[monster][MONSTER_ENTITY_NAME], monster, g_MonsterClass[monster][MONSTER_HEALTH]);
+		menu_additem(menu, itemName, itemInfo);
+	}
+	menu_setprop(menu, MPROP_NOCOLORS, 0);
+
+	menu_display(id, menu);
+
+	return PLUGIN_HANDLED;
+}
+
+public HandleRemoveMenu(id, menu, item)
+{
+	if (item == MENU_EXIT)
+	{
+		ShowAdminMenu(id);
+		menu_destroy(menu);
+		return PLUGIN_HANDLED;
+	}
+
+	new itemKey[32];
+	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
+
+	new monster = str_to_num(itemKey);
+	removeMonster(monster);
+
+	if (ArraySize(g_MonstersAlive))
+		ShowRemoveMenu(id);
+	else
+		ShowAdminMenu(id);
 
 	return PLUGIN_HANDLED;
 }
