@@ -25,10 +25,14 @@
 #define TOUCH_GROUND_DISTANCE				4.0
 #define MAX_ACCUMULATED_UNSTUCK_VELOCITY	500.0
 
+#define ADSTART_HUDMSG_INTERVAL				7.0		// a HUD message every 7 seconds
+
 #define DEFAULT_MONSTER_FRAMETIME			0.1
 #define DEFAULT_MONSTER_DAMAGE				20.0
 #define DEFAULT_MONSTER_HEALTH				150.0
 #define DEFAULT_MONSTER_SPEED				300.0
+
+#define DEFAULT_SHOP_HEALTH					30
 
 #define POINTS_TO_CREDITS_FACTOR			0.1
 #define REWARD_RECEIVAL_THRESHOLD1			50000.0
@@ -38,6 +42,46 @@
 #define DEFAULT_POINTS_REWARD				100.0
 
 #define GARBAGE_REMOVAL_TIME				30.0
+
+#define NEXUS_MAX_HEALTH					10000.0
+#define NEXUS_REPAIR_FX_TIME				0.6
+#define NEXUS_AUTOREPAIR_FX_TIME			0.3
+#define NEXUS_AUTOREPAIR_INTERVAL			15.0	// repair every 15 seconds
+#define NEXUS_AEGIS_TIME					8.0
+#define NEXUS_FX_RENDER_AMT					160
+#define DEFAULT_RENDER_AMT					16.0
+
+// weapons.h
+#define URANIUM_MAX_CARRY		100
+#define	_9MM_MAX_CARRY			250
+#define _357_MAX_CARRY			36
+#define BUCKSHOT_MAX_CARRY		125
+#define BOLT_MAX_CARRY			50
+#define ROCKET_MAX_CARRY		5
+#define HANDGRENADE_MAX_CARRY	10
+#define SATCHEL_MAX_CARRY		5
+#define TRIPMINE_MAX_CARRY		5
+#define SNARK_MAX_CARRY			15
+#define HORNET_MAX_CARRY		8
+#define M203_GRENADE_MAX_CARRY	10
+
+// weapons.h
+#define WEAPON_NOCLIP			-1
+#define CROWBAR_MAX_CLIP		WEAPON_NOCLIP
+#define GLOCK_MAX_CLIP			17
+#define PYTHON_MAX_CLIP			6
+#define MP5_MAX_CLIP			50
+#define MP5_DEFAULT_AMMO		25
+#define SHOTGUN_MAX_CLIP		8
+#define CROSSBOW_MAX_CLIP		5
+#define RPG_MAX_CLIP			1
+#define GAUSS_MAX_CLIP			WEAPON_NOCLIP
+#define EGON_MAX_CLIP			WEAPON_NOCLIP
+#define HORNETGUN_MAX_CLIP		WEAPON_NOCLIP
+#define HANDGRENADE_MAX_CLIP	WEAPON_NOCLIP
+#define SATCHEL_MAX_CLIP		WEAPON_NOCLIP
+#define TRIPMINE_MAX_CLIP		WEAPON_NOCLIP
+#define SNARK_MAX_CLIP			WEAPON_NOCLIP
 
 #define WP_SPAWN				(1<<0)	// spawn point
 #define WP_BOSS					(1<<1)	// special spawn point, e.g.: for tentacles to spawn there
@@ -62,15 +106,15 @@
 
 #define DEFAULT_DIFFICULTY		DIFFICULTY_NORMAL
 
-#define AGVOTE_UNDECIDED		0x00
-#define AGVOTE_YES 				0x01
-#define AGVOTE_NO 				0x02
+//#define AGVOTE_UNDECIDED		0x00
+//#define AGVOTE_YES 			0x01
+//#define AGVOTE_NO 			0x02
 
 // Vote status
-#define AGVOTE_NOT_RUNNING		0x00
-#define AGVOTE_CALLED			0x01
+//#define AGVOTE_NOT_RUNNING	0x00
+//#define AGVOTE_CALLED			0x01
 #define AGVOTE_ACCEPTED			0x02
-#define AGVOTE_DENIED			0x03
+//#define AGVOTE_DENIED			0x03
 
 // Material of the gibs when some breakable thing breaks
 #define BREAK_GLASS				0x01
@@ -188,6 +232,7 @@ enum _:ENTITY_STATE
 enum _:MONSTER_DATA
 {
 	MONSTER_ENTITY_NAME[32],
+	MONSTER_DISPLAY_NAME[32],
 	MONSTER_MODEL[64],
 	Float:MONSTER_DAMAGE,
 	Float:MONSTER_HEALTH,
@@ -200,6 +245,30 @@ enum _:DIFFICULTY
 {
 	Float:DIFFICULTY_STATS_MULTIPLIER,
 	DIFFICULTY_ROUNDS
+}
+
+enum _:PURCHASABLE
+{
+	PURCHASABLE_NAME[16],
+	PURCHASABLE_DISPLAY_NAME[32],
+	Float:PURCHASABLE_PRICE,
+	PURCHASABLE_TYPE:PURCHASABLE_CATEGORY
+}
+
+enum PURCHASABLE_TYPE
+{
+	PURCHASABLE_WEAPON,
+	PURCHASABLE_NEXUS,
+	PURCHASABLE_OTHER
+}
+
+enum NEXUS_EFFECT
+{
+	NEXUS_FX_NONE,
+	NEXUS_FX_HIDDEN,
+	NEXUS_FX_AEGIS,
+	NEXUS_FX_REPAIR,
+	NEXUS_FX_AUTOREPAIR
 }
 
 enum
@@ -591,7 +660,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.5-alpha";
+new const VERSION[]					= "0.9.6-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -638,8 +707,14 @@ new Array:g_MonstersAlive;
 new g_CurrRound;
 new g_CurrDifficulty = DEFAULT_DIFFICULTY;
 new g_CurrMode = MODE_FUN;
+new NEXUS_EFFECT:g_OldNexusFx	= NEXUS_FX_NONE;
+new NEXUS_EFFECT:g_CurrNexusFx	= NEXUS_FX_NONE;
+new Float:g_AegisEndTime;
+new Float:g_LastRepairTime;
+new Float:g_LastAutoRepairTime;
 new Float:g_RoundEndTime;
 new bool:g_IsAgstartFull;
+
 new g_Nexus;
 new g_TaskEntity;
 new g_HudEntity;
@@ -650,7 +725,7 @@ new g_Bot; // a fakeclient to be able to agstart
 
 new g_GameState;
 new Float:g_NexusEndHP;
-
+new Float:g_AutoRepairHp;
 new Float:g_NextSatchelsMsgTime; // cooldown for showing the message about satchel amount in the map
 
 // Vote control
@@ -779,10 +854,20 @@ public plugin_init()
 	register_clcmd("say ad_start", 		"CmdStart",			_,			"- alias for agstart normal; that is, start a game in normal difficulty");
 	register_clcmd("say adstart",		"CmdStart",			_,			"- alias for agstart normal; that is, start a game in normal difficulty");
 	register_clcmd("say /unsatchel",	"CmdUnsatchel");
-	register_clcmd("say /gauss",		"CmdBuyGauss");
+
+	// Shop items: weapons
 	register_clcmd("say /egon",			"CmdBuyEgon");
+	register_clcmd("say /gauss",		"CmdBuyGauss");
+	register_clcmd("say /satchel",		"CmdBuySatchel");
+	register_clcmd("say /shotgun",		"CmdBuyShotgun");
+
+	// Shop items: other
+	register_clcmd("say /health",		"CmdBuyHealth");
+	register_clcmd("say /aegis",		"CmdNexusAegis");
+	register_clcmd("say /autorepair",	"CmdNexusAutoRepair");
 	register_clcmd("say /repair",		"CmdNexusRepair");
 
+	// Menus
 	register_clcmd("say /menu",			"ShowMainMenu");
 	register_clcmd("say /play",			"ShowDifficultyMenu");
 	register_clcmd("say /mode",			"ShowModeMenu");
@@ -838,16 +923,16 @@ public plugin_init()
 
 	g_MaxPlayers = get_maxplayers();
 
-	g_TaskEntity	= engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
 	g_HudEntity		= engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
+	g_TaskEntity	= engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
 	g_CheckerEntity	= engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "info_target"));
 
-	set_pev(g_TaskEntity,		pev_classname, engfunc(EngFunc_AllocString, "timer_entity"));
 	set_pev(g_HudEntity,		pev_classname, engfunc(EngFunc_AllocString, "hud_entity"));
+	set_pev(g_TaskEntity,		pev_classname, engfunc(EngFunc_AllocString, "timer_entity"));
 	set_pev(g_CheckerEntity,	pev_classname, engfunc(EngFunc_AllocString, "checker_entity"));
 
-	set_pev(g_TaskEntity,		pev_nextthink, get_gametime() + 1.01);
 	set_pev(g_HudEntity,		pev_nextthink, get_gametime() + 1.01);
+	set_pev(g_TaskEntity,		pev_nextthink, get_gametime() + 1.01);
 	set_pev(g_CheckerEntity,	pev_nextthink, get_gametime() + 3.01);
 
 	g_SyncHudRoundTimeLeft		= CreateHudSyncObj();
@@ -929,7 +1014,12 @@ public FwKeyValue(ent, kvd)
 	if (!pev_valid(ent))
 		return FMRES_IGNORED;
 
-	getMapWaypoints(ent, kvd);
+	new className[32];
+	get_kvd(kvd, KV_ClassName, className, charsmax(className));
+
+	if (equal(className, "info_node"))
+		getMapWaypoints(ent, kvd);
+
 	return FMRES_IGNORED;
 }
 
@@ -1018,10 +1108,11 @@ configureServer()
 	server_cmd("sv_ag_vote_start 1");
 }
 
-insertMonsterData(monsterType[], monsterModel[], Float:damage, Float:health, Float:speed, bool:isCustom, bool:isAirborne)
+insertMonsterData(monsterType[], displayName[], monsterModel[], Float:damage, Float:health, Float:speed, bool:isCustom, bool:isAirborne)
 {
 	new data[MONSTER_DATA];
 	copy(data[MONSTER_ENTITY_NAME], charsmax(data[MONSTER_ENTITY_NAME]), monsterType);
+	copy(data[MONSTER_DISPLAY_NAME], charsmax(data[MONSTER_DISPLAY_NAME]), displayName);
 	copy(data[MONSTER_MODEL], charsmax(data[MONSTER_MODEL]), monsterModel);
 	data[MONSTER_DAMAGE] = damage;
 	data[MONSTER_HEALTH] = health;
@@ -1037,37 +1128,37 @@ configureMonsters()
 	g_MonsterData = TrieCreate();
 
 	/* ----- HL default monsters ----- */
-	//					entity name					model path					damage	health	speed	custom 	airborne
-	insertMonsterData("monster_alien_controller",	"models/controller.mdl",	30.0,	240.0,	160.0,	false, true);
-	insertMonsterData("monster_alien_grunt",		"models/agrunt.mdl",		30.0,	320.0,	230.0,	false, false);
-	insertMonsterData("monster_alien_slave",		"models/islave.mdl",		15.0,	120.0,	260.0,	false, false);
-	insertMonsterData("monster_bigmomma",			"models/big_mom.mdl",		240.0,	3200.0,	260.0,	false, false);
-	insertMonsterData("monster_bloater",			"models/floater.mdl",		25.0,	200.0,	170.0,	false, true);
-	insertMonsterData("monster_bullchicken",		"models/bullsquid.mdl",		35.0,	280.0,	260.0,	false, false);
-	insertMonsterData("monster_flyer_flock",		"models/boid.mdl",			15.0,	120.0,	200.0,	false, true);
-	insertMonsterData("monster_gargantua",			"models/garg.mdl",			150.0,	1000.0,	200.0,	false, false);
-	insertMonsterData("monster_headcrab",			"models/headcrab.mdl",		10.0,	80.0,	300.0,	false, false);
-	insertMonsterData("monster_houndeye",			"models/houndeye.mdl",		15.0,	110.0,	240.0,	false, false);
-	insertMonsterData("monster_nihilanth",			"models/nihilanth.mdl",		500.0,	8000.0,	80.0,	false, true);
-	insertMonsterData("monster_tentacle",			"models/tentacle2.mdl",		250.0,	4000.0,	80.0,	false, false);
-	insertMonsterData("monster_zombie",				"models/zombie.mdl",		20.0,	175.0,	250.0,	false, false);
+	//					entity name					display name	model path					damage	health	speed	custom	airborne
+	insertMonsterData("monster_alien_controller",	"Controller",	"models/controller.mdl",	30.0,	240.0,	160.0,	false,	true);
+	insertMonsterData("monster_alien_grunt",		"Alien grunt",	"models/agrunt.mdl",		30.0,	320.0,	230.0,	false,	false);
+	insertMonsterData("monster_alien_slave",		"Vortigaunt",	"models/islave.mdl",		15.0,	120.0,	260.0,	false,	false);
+	insertMonsterData("monster_bigmomma",			"Gonarch",		"models/big_mom.mdl",		240.0,	3200.0,	260.0,	false,	false);
+	insertMonsterData("monster_bloater",			"Floater",		"models/floater.mdl",		25.0,	200.0,	170.0,	false,	true);
+	insertMonsterData("monster_bullchicken",		"Bullsquid",	"models/bullsquid.mdl",		35.0,	280.0,	260.0,	false,	false);
+	insertMonsterData("monster_flyer_flock",		"Boid",			"models/boid.mdl",			15.0,	120.0,	200.0,	true,	true); // flFlockRadius, iFlockSize
+	insertMonsterData("monster_gargantua",			"Gargantua",	"models/garg.mdl",			150.0,	1000.0,	200.0,	false,	false);
+	insertMonsterData("monster_headcrab",			"Headcrab",		"models/headcrab.mdl",		10.0,	80.0,	300.0,	false,	false);
+	insertMonsterData("monster_houndeye",			"Houndeye",		"models/houndeye.mdl",		15.0,	110.0,	240.0,	false,	false);
+	insertMonsterData("monster_nihilanth",			"Nihilanth",	"models/nihilanth.mdl",		500.0,	8000.0,	80.0,	false,	true);
+	insertMonsterData("monster_tentacle",			"Tentacle",		"models/tentacle2.mdl",		250.0,	4000.0,	80.0,	false,	false);
+	insertMonsterData("monster_zombie",				"Zombie",		"models/zombie.mdl",		20.0,	175.0,	250.0,	false,	false);
 	// This one is just for compatibility with checks that exist through the code, doesn't hurt to have 1 extra thing
-	insertMonsterData("monster_generic",			"models/zombie.mdl",		20.0,	175.0,	250.0,	false, false);
+	insertMonsterData("monster_generic",			"Generic",		"models/zombie.mdl",		20.0,	175.0,	250.0,	false, false);
 
 	/* ----- Custom monsters ----- */
-	insertMonsterData("monster_aflock",				"models/aflock.mdl",		20.0,	160.0,	220.0,	true, true);
-	//insertMonsterData("monster_charger",			"models/charger.mdl",		15.0,	110.0,	250.0,	true, false);
-	//insertMonsterData("monster_chumtoad",			"models/chumtoad.mdl",		10.0,	95.0,	240.0,	true, false);
-	insertMonsterData("monster_friendly",			"models/friendly.mdl",		40.0,	450.0,	240.0,	true, false);
-	//insertMonsterData("monster_gasbag",			"models/gasbag.mdl",		20.0,	280.0,	160.0,	true, true);
-	insertMonsterData("monster_hunter",				"models/hunter.mdl",		40.0,	500.0,	280.0,	true, false);
-	insertMonsterData("monster_kingpin",			"models/kingpin.mdl",		35.0,	320.0,	260.0,	true, false);
-	insertMonsterData("monster_pantagruel",			"models/pantagruel.mdl",	180.0,	1600.0,	170.0,	true, false);
-	insertMonsterData("monster_panther",			"models/panther.mdl",		25.0,	250.0,	400.0,	true, false);
-	//insertMonsterData("monster_protozoa",			"models/protozoa.mdl",		10.0,	210.0,	180.0,	true, true);
-	//insertMonsterData("monster_redheadcrab",		"models/redheadcrab.mdl",	10.0,	110.0,	260.0,	true, false);
-	//insertMonsterData("monster_snapbug",			"models/snapbug.mdl",		15.0,	95.0,	280.0,	true, false);
-	//insertMonsterData("monster_sqknest",			"models/w_sqknest.mdl",		20.0,	190.0,	190.0,	true, false);
+	insertMonsterData("monster_aflock",				"Yellow boid",	"models/aflock.mdl",		20.0,	160.0,	220.0,	true, true);
+	//insertMonsterData("monster_charger",			"Charger",		"models/charger.mdl",		15.0,	110.0,	250.0,	true, false);
+	//insertMonsterData("monster_chumtoad",			"Chumtoad",		"models/chumtoad.mdl",		10.0,	95.0,	240.0,	true, false);
+	insertMonsterData("monster_friendly",			"Friendly",		"models/friendly.mdl",		40.0,	450.0,	240.0,	true, false);
+	//insertMonsterData("monster_gasbag",			"Gasbag",		"models/gasbag.mdl",		20.0,	280.0,	160.0,	true, true);
+	insertMonsterData("monster_hunter",				"Hunter",		"models/hunter.mdl",		40.0,	500.0,	280.0,	true, false);
+	insertMonsterData("monster_kingpin",			"Kingpin",		"models/kingpin.mdl",		35.0,	320.0,	260.0,	true, false);
+	insertMonsterData("monster_pantagruel",			"Pantagruel",	"models/pantagruel.mdl",	180.0,	1600.0,	170.0,	true, false);
+	insertMonsterData("monster_panther",			"Panther",		"models/panther.mdl",		25.0,	250.0,	400.0,	true, false);
+	//insertMonsterData("monster_protozoa",			"Protozoa",		"models/protozoa.mdl",		10.0,	210.0,	180.0,	true, true);
+	//insertMonsterData("monster_redheadcrab",		"Red headcrab",	"models/redheadcrab.mdl",	10.0,	110.0,	260.0,	true, false);
+	//insertMonsterData("monster_snapbug",			"Snapbug",		"models/snapbug.mdl",		15.0,	95.0,	280.0,	true, false);
+	//insertMonsterData("monster_sqknest",			"Snark nest",	"models/w_sqknest.mdl",		20.0,	190.0,	190.0,	true, false);
 }
 
 loadWaypoints()
@@ -1156,7 +1247,7 @@ loadWaypoints()
 
 		waypoint[WP_NEIGHBOURS] = nbs; // save the neighbours into the waypoint
 
-		// FIXME: avoid unnecessary redundancy, the WP_ID is now both in the key and in the value
+		// TODO: avoid unnecessary redundancy, the WP_ID is now both in the key and in the value
 		TrieSetArray(g_Waypoints, waypoint[WP_ID], waypoint, sizeof(waypoint));
 	}
 	server_print("[%s] Loaded %d waypoints from %s", PLUGIN_TAG, TrieGetSize(g_Waypoints), waypointsFilePath);
@@ -1215,18 +1306,37 @@ loadRounds()
 
 loadShop()
 {
+	server_print("[%s] Preparing the in-game shop...", PLUGIN_TAG);
 	g_ShopItems = TrieCreate();
 
-	// Weapons:
-	TrieSetCell(g_ShopItems, "egon", 100.0);
-	TrieSetCell(g_ShopItems, "gauss", 90.0);
+	//				name			display				price	category
+	insertShopItem("egon",			"Egon",				25.0,	PURCHASABLE_WEAPON);
+	insertShopItem("gauss",			"Gauss",			30.0,	PURCHASABLE_WEAPON);
+	// TODO: modify satchel price depending on game mode, should be cheaper in competitive
+	insertShopItem("satchel",		"Satchel",			60.0,	PURCHASABLE_WEAPON);
+	insertShopItem("shotgun",		"Shotgun",			25.0,	PURCHASABLE_WEAPON);
 
-	// Other:
-	TrieSetCell(g_ShopItems, "repair", 2500.0);
+	insertShopItem("aegis",			"Nexus Aegis",		1200.0,	PURCHASABLE_NEXUS);
+	insertShopItem("autorepair",	"Nexus autorepair",	2400.0,	PURCHASABLE_NEXUS);
+	insertShopItem("repair",		"Nexus repair",		2000.0,	PURCHASABLE_NEXUS);
+
+	insertShopItem("health",		"2 medkits",		20.0);
+}
+
+insertShopItem(name[], displayName[], Float:price, PURCHASABLE_TYPE:itemType=PURCHASABLE_OTHER)
+{
+	new item[PURCHASABLE];
+	copy(item[PURCHASABLE_NAME], charsmax(item[PURCHASABLE_NAME]), name);
+	copy(item[PURCHASABLE_DISPLAY_NAME], charsmax(item[PURCHASABLE_DISPLAY_NAME]), displayName);
+	item[PURCHASABLE_PRICE] = price;
+	item[PURCHASABLE_CATEGORY] = itemType;
+	TrieSetArray(g_ShopItems, item[PURCHASABLE_NAME], item, sizeof(item));
 }
 
 initNexus()
 {
+	// TODO: maybe this should be assigned just once if the entity is never removed from game,
+	// because when it's destroyed I think it's actually only put invisible and moved elsewhere
 	g_Nexus = find_ent_by_tname(0, NEXUS_NAME);
 	if (!pev_valid(g_Nexus))
 	{
@@ -1240,18 +1350,19 @@ initNexus()
 	if (!equal(className, "func_breakable"))
 	{
 		// TODO: review if it's really necessary to be func_breakable to be able to take damage
-		server_print("[%s] There Nexus is not of type func_breakable. Cannot run the %s mod.", PLUGIN_TAG, PLUGIN_NAME);
+		server_print("[%s] The Nexus is not of type func_breakable. Cannot run the %s mod.", PLUGIN_TAG, PLUGIN_NAME);
 		pause("a");
 		return;
 	}
 
 	set_pev(g_Nexus, pev_takedamage, DAMAGE_NO);
-	set_pev(g_Nexus, pev_max_health, 10000.0);
+	set_pev(g_Nexus, pev_max_health, NEXUS_MAX_HEALTH);
 	set_pev(g_Nexus, pev_health, get_pcvar_float(pcvar_ad_nexus_health));
 
-	set_pev(g_Nexus, pev_renderamt, 255);
-	set_pev(g_Nexus, pev_rendermode, 0); // Normal mode
+	set_rendering(g_Nexus); // default rendering effects
 	set_pev(g_Nexus, pev_solid, SOLID_BSP);
+
+	g_CurrNexusFx = NEXUS_FX_NONE;
 
 	new Float:origin[3];
 	pev(g_Nexus, pev_origin, origin);
@@ -1286,8 +1397,8 @@ public FwMsgCountdown(id, dest, ent)
 		resetMenus();
 	}
 
-	server_print("[%.4f] Countdown::id=%d,dest=%d,ent=%d,c=%d,snd=%d,p1=%s,p2=%s",
-		get_gametime(), id, dest, ent, count, sound, player1, player2);
+	//server_print("[%.4f] Countdown::id=%d,dest=%d,ent=%d,c=%d,snd=%d,p1=%s,p2=%s",
+	//	get_gametime(), id, dest, ent, count, sound, player1, player2);
 
 	if (count != -1 || sound != 0)
 		return;
@@ -1312,16 +1423,16 @@ public FwMsgSettings(id, dest, ent)
 			resetMenus();
 	}
 
-	server_print("[%.4f] Settings::id=%d,dest=%d,ent=%d,isMatch=%d", get_gametime(), id, dest, ent, isMatch);
+	//server_print("[%.4f] Settings::id=%d,dest=%d,ent=%d,isMatch=%d", get_gametime(), id, dest, ent, isMatch);
 }
 
 public FwMsgVote(id)
 {
-	static status, yes, no, undecided, setting[32], value[32], caller[32];
+	static status/*, yes, no, undecided*/, setting[32], value[32], caller[32];
 	status		= get_msg_arg_int(1);
-	yes			= get_msg_arg_int(2);
-	no			= get_msg_arg_int(3);
-	undecided	= get_msg_arg_int(4);
+	//yes			= get_msg_arg_int(2);
+	//no			= get_msg_arg_int(3);
+	//undecided	= get_msg_arg_int(4);
 	get_msg_arg_string(5, setting,	charsmax(setting));
 	get_msg_arg_string(6, value,	charsmax(value));
 	get_msg_arg_string(7, caller,	charsmax(caller));
@@ -1338,8 +1449,8 @@ public FwMsgVote(id)
 		set_msg_arg_string(6, value);
 	}
 */
-	server_print("[%.4f] Vote::id=%d,status=%d,yes=%d,no=%d,n/a=%d,k=%s,v=%s,caller=%s",
-		get_gametime(), id, status, yes, no, undecided, setting, value, caller);
+	//server_print("[%.4f] Vote::id=%d,status=%d,yes=%d,no=%d,n/a=%d,k=%s,v=%s,caller=%s",
+	//	get_gametime(), id, status, yes, no, undecided, setting, value, caller);
 
 	if (equali(setting, "agstart") && status == AGVOTE_ACCEPTED)
 	{
@@ -1375,11 +1486,12 @@ public FwMsgVote(id)
 		ucfirst(difficulty);
 		client_print(0, print_chat, "[%s] Starting a %s game. Have fun!", PLUGIN_TAG, difficulty);
 
-		server_print("[%.4f] Vote:AgStart::value=%s,difficulty=%d,mode=%d", get_gametime(), value, g_CurrDifficulty, g_CurrMode);
+		server_print("[%.4f] agstart (value=%s,difficulty=%d,mode=%d)", get_gametime(), value, g_CurrDifficulty, g_CurrMode);
 
 		if (g_CurrMode == MODE_COMPETITIVE && g_IsAgstartFull)
 		{
-			// Someone's trying to trick the system... we'll restart now without 'full' as we're in competitive
+			server_print("Someone's trying to trick the system... we'll restart now without 'full' as we're in competitive");
+
 			server_cmd("agabort");
 			server_exec();
 
@@ -1577,6 +1689,7 @@ public FwThrowSatchelPre(weaponId)
 }
 
 // Satchel secondary attack
+// FIXME: avoid spamming the max satchels message
 public FwThrowSatchel2Pre(weaponId)
 {
 	new ent = FM_NULLENT, satchelCount = 0;
@@ -1857,8 +1970,9 @@ resetAgVotes()
 
 public CmdNexusRepair(id)
 {
-	new Float:price;
-	TrieGetCell(g_ShopItems, "repair", price);
+	new Float:price, item[PURCHASABLE];
+	TrieGetArray(g_ShopItems, "repair", item, sizeof(item));
+	price = item[PURCHASABLE_PRICE];
 
 	if (g_PlayerCredits[id] >= price)
 	{
@@ -1872,22 +1986,118 @@ public CmdNexusRepair(id)
 	return PLUGIN_HANDLED;
 }
 
+public CmdNexusAutoRepair(id)
+{
+	new Float:price, item[PURCHASABLE];
+	TrieGetArray(g_ShopItems, "autorepair", item, sizeof(item));
+	price = item[PURCHASABLE_PRICE];
+
+	if (g_PlayerCredits[id] >= price)
+	{
+		if (autoRepairNexus(id))
+			g_PlayerCredits[id] -= price;
+	}
+	else
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to autorepair the Nexus.",
+			PLUGIN_TAG, floatround(price));
+
+	return PLUGIN_HANDLED;
+}
+
 public CmdBuyEgon(id)
 {
+	new ammo = get_pdata_int(id, 309);
+
+	if (user_has_weapon(id, HLW_EGON) && ammo == URANIUM_MAX_CARRY)
+	{
+		client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for this weapon.", PLUGIN_TAG);
+		return PLUGIN_HANDLED;
+	}
+
 	buyWeapon(id, "egon");
 	return PLUGIN_HANDLED;
 }
 
 public CmdBuyGauss(id)
 {
+	new ammo = get_pdata_int(id, 309);
+
+	if (user_has_weapon(id, HLW_GAUSS) && ammo == URANIUM_MAX_CARRY)
+	{
+		client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for this weapon.", PLUGIN_TAG);
+		return PLUGIN_HANDLED;
+	}
+
 	buyWeapon(id, "gauss");
+	return PLUGIN_HANDLED;
+}
+
+public CmdBuySatchel(id)
+{
+	new ammo = get_pdata_int(id, 313);
+
+	if (user_has_weapon(id, HLW_SATCHEL) && ammo == SATCHEL_MAX_CARRY)
+	{
+		client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for this weapon.", PLUGIN_TAG);
+		return PLUGIN_HANDLED;
+	}
+
+	buyWeapon(id, "satchel");
+	return PLUGIN_HANDLED;
+}
+
+public CmdBuyShotgun(id)
+{
+	// TODO: find a way to refill the clip if you have 125 ammo in the backpack but 0 in the clip,
+	// because giving the shotgun weapon when 0 clip doesn't refill it for some reason, only adds
+	// to the ammo
+	new ammo = get_pdata_int(id, 305);
+
+	if (user_has_weapon(id, HLW_SHOTGUN) && ammo == BUCKSHOT_MAX_CARRY)
+	{
+		client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for this weapon.", PLUGIN_TAG);
+		return PLUGIN_HANDLED;
+	}
+
+	buyWeapon(id, "shotgun");
+	return PLUGIN_HANDLED;
+}
+
+public CmdBuyHealth(id)
+{
+	new Float:price, item[PURCHASABLE];
+	TrieGetArray(g_ShopItems, "health", item, sizeof(item));
+	price = item[PURCHASABLE_PRICE];
+
+	if (g_PlayerCredits[id] >= price)
+	{
+		new hp = hl_get_user_health(id);
+		if (hp == 100)
+		{
+			client_print(id, print_chat, "[%s] Sorry, you already have the max health.", PLUGIN_TAG);
+			return PLUGIN_HANDLED;
+		}
+
+		hp += DEFAULT_SHOP_HEALTH;
+		if (hp > 100)
+			hp = 100;
+
+		hl_set_user_health(id, hp);
+
+		g_PlayerCredits[id] -= price;
+	}
+	else
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to autorepair the Nexus.",
+			PLUGIN_TAG, floatround(price));
+
 	return PLUGIN_HANDLED;
 }
 
 buyWeapon(id, weapon[])
 {
-	new Float:price;
-	TrieGetCell(g_ShopItems, weapon, price);
+	new Float:price, item[PURCHASABLE];
+	TrieGetArray(g_ShopItems, weapon, item, sizeof(item));
+	price = item[PURCHASABLE_PRICE];
 
 	if (g_PlayerCredits[id] >= price)
 	{
@@ -1896,6 +2106,37 @@ buyWeapon(id, weapon[])
 	}
 	else
 		client_print(id, print_chat, "[%s] Sorry, you need %d credits to buy %s.", PLUGIN_TAG, floatround(price), weapon);
+}
+
+public CmdNexusAegis(id)
+{
+	new Float:price, item[PURCHASABLE];
+	TrieGetArray(g_ShopItems, "aegis", item, sizeof(item));
+	price = item[PURCHASABLE_PRICE];
+
+	if (g_PlayerCredits[id] >= price)
+	{
+		g_PlayerCredits[id] -= price;
+
+		if (g_AegisEndTime >= get_gametime())
+			g_AegisEndTime += NEXUS_AEGIS_TIME; // Stack different aegis times
+		else
+			g_AegisEndTime = get_gametime() + NEXUS_AEGIS_TIME;
+
+		set_pev(g_Nexus, pev_takedamage, DAMAGE_NO);
+
+		g_CurrNexusFx = NEXUS_FX_AEGIS;
+
+		new playerName[32];
+		getColorlessName(id, playerName, charsmax(playerName));
+
+		client_print(0, print_chat, "[%s] %s has just protected the Nexus with Aegis for %d seconds!",
+			PLUGIN_TAG, playerName, floatround(NEXUS_AEGIS_TIME));
+	}
+	else
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to buy Aegis.", PLUGIN_TAG, floatround(price));
+
+	return PLUGIN_HANDLED;
 }
 
 public CmdCheckGame(id)
@@ -1910,7 +2151,7 @@ public CmdCheckGame(id)
 	console_print(id, " - Mode: %s",				g_ModesPretty[g_CurrMode]);
 	console_print(id, " - Current time: %.3fs",		get_gametime());
 	console_print(id, " - Round end time: %.3fs",	g_RoundEndTime);
-	console_print(id, " - Nexus HP: %.2f / %.2f",	nexusHP, get_pcvar_float(pcvar_ad_nexus_health));
+	console_print(id, " - Nexus HP: %.2f / %.2f",	nexusHP, NEXUS_MAX_HEALTH);
 
 	new monstersAlive = ArraySize(g_MonstersAlive);
 	if (monstersAlive == 0)
@@ -2338,7 +2579,7 @@ public ResetMonsterSpawn(taskId)
 public FwThinkPre(id)
 {
 	if (id == g_HudEntity)		FwHudThinkPre(id);
-	if (id == g_TaskEntity)		FwInfoThinkPre(id);
+	if (id == g_TaskEntity)		FwTaskThinkPre(id);
 	if (id == g_CheckerEntity)	FwCheckerThinkPre(id);
 
 	return HAM_HANDLED;
@@ -2346,6 +2587,9 @@ public FwThinkPre(id)
 
 public FwHudThinkPre(id)
 {
+	new Float:frameTime = 0.1;
+	new Float:currTime = get_gametime();
+
 	set_hudmessage(80, 240, 0, _, _, 1, 2.0, 6.0, 0.1, 0.4, -1);
 	if (g_GameState == GAME_RUNNING)
 	{
@@ -2353,7 +2597,8 @@ public FwHudThinkPre(id)
 	}
 	else if (g_GameState == GAME_IDLE)
 	{
-		if (floatround(get_gametime(), floatround_floor) % 7 == 0) // every 7 seconds
+		new Float:mod = fmod(currTime, ADSTART_HUDMSG_INTERVAL);
+		if (mod < frameTime && mod > 0.0)
 		{
 			set_hudmessage(g_HudRGB[0], g_HudRGB[1], g_HudRGB[2], -1.0, 0.16, 2, 1.0, 5.0, 0.1, 0.4, -1);
 			ShowSyncHudMsg(0, g_SyncHudRoundTimeLeft, "-- Type or say adstart to play! --");
@@ -2364,12 +2609,15 @@ public FwHudThinkPre(id)
 		set_pcvar_string(pcvar_hostname, g_OriginalHostname);
 		endHudMessage();
 	}
-	set_pev(id, pev_nextthink, get_gametime() + 0.1);
+	set_pev(id, pev_nextthink, currTime + frameTime);
 	return HAM_HANDLED;
 }
 
-public FwInfoThinkPre(id)
+public FwTaskThinkPre(id)
 {
+	// TODO: refactor these variables, DRY
+	new Float:frameTime = 0.1;
+	new Float:currTime = get_gametime();
 	if (g_GameState == GAME_RUNNING)
 	{
 		if (g_Bot)
@@ -2390,13 +2638,68 @@ public FwInfoThinkPre(id)
 		else
 		{
 			new maxRound = g_DifficultyStats[g_CurrDifficulty][DIFFICULTY_ROUNDS];
-			if (g_CurrRound == maxRound && ArraySize(g_MonstersAlive) == 0 && g_RoundEndTime <= get_gametime())
+			if (g_CurrRound == maxRound && ArraySize(g_MonstersAlive) == 0 && g_RoundEndTime <= currTime)
 			{
 				gameWon();
 			}
 		}
+
+		// Checking the game state again as it may have changed before
+		if (g_AutoRepairHp > 0.0 && g_GameState == GAME_RUNNING)
+		{
+			new Float:mod = fmod(currTime, NEXUS_AUTOREPAIR_INTERVAL);
+			if (mod < frameTime && mod > 0.0) // hack to only execute once at intervals without using a task
+			{ // Do the actual autorepair
+				new Float:hp;
+				pev(g_Nexus, pev_health, hp);
+
+				new Float:newHp = hp + g_AutoRepairHp;
+				if (newHp > NEXUS_MAX_HEALTH)
+					newHp = NEXUS_MAX_HEALTH;
+
+				set_pev(g_Nexus, pev_health, newHp);
+
+				g_LastAutoRepairTime = currTime;
+				g_CurrNexusFx = NEXUS_FX_AUTOREPAIR;
+
+				server_print("[%.4f] autorepairing %.1f", currTime, g_AutoRepairHp);
+			}
+		}
+
+		// Nexus state transitions
+		if (isTransitioningTo(NEXUS_FX_AEGIS))
+		{
+			set_rendering(g_Nexus, kRenderFxPulseSlowWide, 0, 25, 200, kRenderTransColor, NEXUS_FX_RENDER_AMT);
+			set_pev(g_Nexus, pev_takedamage, DAMAGE_NO);
+		}
+		else if (isTransitioningTo(NEXUS_FX_REPAIR))
+			set_rendering(g_Nexus, kRenderFxPulseFastWide, 0, 200, 25, kRenderTransColor, NEXUS_FX_RENDER_AMT);
+
+		else if (isTransitioningTo(NEXUS_FX_AUTOREPAIR))
+			set_rendering(g_Nexus, kRenderFxPulseFastWide, 0, 200, 100, kRenderTransColor, NEXUS_FX_RENDER_AMT);
+
+		else if (isTransitioningTo(NEXUS_FX_NONE))
+		{ // Back to normal
+			set_rendering(g_Nexus);
+			set_pev(g_Nexus, pev_takedamage, DAMAGE_YES);
+		}
+
+		// Check the current state of nexus effects
+		// TODO: try to make this more robust, not relaying in the order of these statements to prioritize an effect over others
+		if (g_LastAutoRepairTime + NEXUS_AUTOREPAIR_FX_TIME > currTime)
+			g_CurrNexusFx = NEXUS_FX_AUTOREPAIR;
+
+		else if (g_LastRepairTime + NEXUS_REPAIR_FX_TIME >= currTime)
+			g_CurrNexusFx = NEXUS_FX_REPAIR;
+
+		else if (g_AegisEndTime >= currTime)
+			g_CurrNexusFx = NEXUS_FX_AEGIS;
+
+		else
+			g_CurrNexusFx = NEXUS_FX_NONE;
 	}
-	set_pev(id, pev_nextthink, get_gametime() + 0.1);
+
+	set_pev(id, pev_nextthink, currTime + frameTime);
 	return HAM_HANDLED;
 }
 
@@ -2418,6 +2721,16 @@ public FwCheckerThinkPre(id)
 	}
 	set_pev(id, pev_nextthink, get_gametime() + 3.0);
 	return HAM_HANDLED;
+}
+
+bool:isTransitioningTo(NEXUS_EFFECT:fx)
+{
+	if (g_OldNexusFx != fx && g_CurrNexusFx == fx)
+	{
+		g_OldNexusFx = g_CurrNexusFx;
+		return true;
+	}
+	return false;
 }
 
 // TODO: try and refactor this function
@@ -2729,12 +3042,10 @@ resetMenu(id)
 {
 	new _dummy, menu;
 	player_menu_info(id, _dummy, menu);
-	server_print("initGame :: id=%d, menu=%d", id, menu);
 
 	if (menu > -1)
 	{
 		menu_destroy(menu);
-		server_print("menu destroyed, menu=%d", menu);
 
 		// TODO: maybe show the menu that they were previously managing instead of the main menu
 		ShowMainMenu(id);
@@ -2795,7 +3106,7 @@ spawnMonster(id, monsterType[])
 
 	new Float:hp;
 	pev(monster, pev_health, hp);
-	server_print("New monster id=%d (%s) with HP=%.0f", monster, monsterType, hp);
+	//server_print("New monster id=%d (%s) with HP=%.0f", monster, monsterType, hp);
 	ArrayPushCell(g_MonstersAlive, monster);
 
 	return monster;
@@ -2816,7 +3127,7 @@ monsterInit(id)
 	new flags = pev(id, pev_flags);
 	new spawnFlags = pev(id, pev_spawnflags);
 
-	server_print("[default] flags=%d, spawnFlags=%d", flags, spawnFlags);
+	//server_print("[default] flags=%d, spawnFlags=%d", flags, spawnFlags);
 
 	// We want monsters to go through other monsters, but not through players
 	//spawnFlags |= SF_MONSTER_HITMONSTERCLIP;
@@ -2825,7 +3136,7 @@ monsterInit(id)
 	flags |= FL_MONSTER;
 	flags &= ~FL_MONSTERCLIP;
 
-	server_print("[modified] flags=%d, spawnFlags=%d", flags, spawnFlags);
+	//server_print("[modified] flags=%d, spawnFlags=%d", flags, spawnFlags);
 
 	set_pev(id, pev_flags, flags);
 	set_pev(id, pev_spawnflags, spawnFlags);
@@ -2878,15 +3189,12 @@ Float:getSurvivalStatsMultiplier()
 
 monsterReachedNexus(id)
 {
-	new className[32];
-	pev(id, pev_classname, className, charsmax(className));
-
-	new Float:damage = g_MonsterClass[id][MONSTER_DAMAGE];
-	if (damage <= 0.0)
-		damage = DEFAULT_MONSTER_DAMAGE;
-
-	if (pev_valid(g_Nexus))
+	if (pev_valid(g_Nexus) && g_AegisEndTime < get_gametime())
 	{
+		new Float:damage = g_MonsterClass[id][MONSTER_DAMAGE];
+		if (damage <= 0.0)
+			damage = DEFAULT_MONSTER_DAMAGE;
+
 		new Float:oldNexusHP, Float:newNexusHP;
 		pev(g_Nexus, pev_health, oldNexusHP);
 		newNexusHP = oldNexusHP - damage;
@@ -2899,7 +3207,7 @@ monsterReachedNexus(id)
 		else
 			set_pev(g_Nexus, pev_health, newNexusHP);
 	}
-	server_print("Removing monster #%d that has reached the Nexus", id);
+	//server_print("Removing monster #%d that has reached the Nexus", id);
 	removeMonster(id);
 }
 
@@ -2950,7 +3258,7 @@ removeMonster(id, bool:removeFromAlive=true)
 			index = ArrayFindValue(g_MonstersAlive, id);
 			if (index > -1)
 			{
-				server_print("Removing from alive monster #%d", id);
+				server_print("Removing monster #%d", id);
 				ArrayDeleteItem(g_MonstersAlive, index);
 			}
 		}
@@ -3121,12 +3429,14 @@ flushGame()
 }
 
 hideNexus()
-{
+{ // TODO: try to handle this in the TaskThink together with the other nexus effects
 	set_pev(g_Nexus, pev_renderamt, 0);
-	set_pev(g_Nexus, pev_rendermode, 2); // TransTexture mode
+	set_pev(g_Nexus, pev_rendermode, kRenderTransTexture);
 	set_pev(g_Nexus, pev_health, get_pcvar_float(pcvar_ad_nexus_health));
 	set_pev(g_Nexus, pev_takedamage, DAMAGE_NO);
 	set_pev(g_Nexus, pev_solid, SOLID_NOT);
+
+	g_CurrNexusFx = NEXUS_FX_HIDDEN;
 }
 
 bool:repairNexus(id)
@@ -3139,13 +3449,40 @@ bool:repairNexus(id)
 
 	new Float:hp, Float:hpExtra = nexusHealthPerRepair();
 	pev(g_Nexus, pev_health, hp);
-	set_pev(g_Nexus, pev_health, hp + hpExtra);
+
+	new Float:newHp = hp + hpExtra;
+	if (newHp > NEXUS_MAX_HEALTH)
+		newHp = NEXUS_MAX_HEALTH;
+
+	set_pev(g_Nexus, pev_health, newHp);
+
+	g_CurrNexusFx = NEXUS_FX_REPAIR;
+	g_LastRepairTime = get_gametime();
 
 	new playerName[32];
 	getColorlessName(id, playerName, charsmax(playerName));
 
 	client_print(0, print_chat, "[%s] %s has just repaired the Nexus, restoring %dhp!",
 		PLUGIN_TAG, playerName, floatround(hpExtra, floatround_floor));
+
+	return true;
+}
+
+bool:autoRepairNexus(id)
+{
+	if (!pev_valid(g_Nexus))
+	{
+		client_print(id, print_chat, "[%s] Sorry, cannot autorepair the Nexus because it doesn't exist anymore. You can try again after restarting the map.", PLUGIN_TAG);
+		return false;
+	}
+
+	g_AutoRepairHp += get_pcvar_float(pcvar_ad_nexus_health) * 0.0025;
+
+	new playerName[32];
+	getColorlessName(id, playerName, charsmax(playerName));
+
+	client_print(0, print_chat, "[%s] %s has just gotten autorepair for the Nexus! Current rate: restoring %dhp every %d seconds.",
+		PLUGIN_TAG, playerName, floatround(g_AutoRepairHp, floatround_floor), floatround(NEXUS_AUTOREPAIR_INTERVAL, floatround_floor));
 
 	return true;
 }
@@ -3186,6 +3523,9 @@ clearHUD()
 
 updateHUD()
 {
+	static players[MAX_PLAYERS], playersNum;
+	get_players_ex(players, playersNum, GetPlayers_ExcludeBots);
+
 	if (g_GameState == GAME_RUNNING && pev_valid(g_Nexus))
 	{
 		new Float:timeLeft, min, sec, timeLeftText[50], difficultyName[32];
@@ -3202,9 +3542,6 @@ updateHUD()
 			formatex(timeLeftText, charsmax(timeLeftText), "Prepare and take weapons!\nGame starting in");
 		else if (g_CurrRound < maxRound)
 			formatex(timeLeftText, charsmax(timeLeftText), "Next round in");
-
-		static players[MAX_PLAYERS], playersNum;
-		get_players_ex(players, playersNum, GetPlayers_ExcludeBots);
 
 		if (timeLeft >= 0.0)
 		{
@@ -3249,8 +3586,9 @@ updateHUD()
 			}
 		}
 		updateScoresHUD(players, playersNum);
-		updateAimingHUD(players, playersNum);
 	}
+
+	updateAimingHUD(players, playersNum);
 }
 
 // Credits available and Nexus HP
@@ -3258,8 +3596,18 @@ updateHUD()
 updateInfoAboveScores(players[MAX_PLAYERS], playersNum, Float:nexusHP)
 {
 	// The Nexus HP is the same for all the players, so prepare that text first and then copy it for everyone
-	new nexusMsg[32];
-	formatex(nexusMsg, charsmax(nexusMsg), "\n\nNexus HP: %d", floatround(nexusHP, floatround_ceil));
+	new nexusMsg[40], aegisMsg[24];
+
+	new Float:aegisTime = g_AegisEndTime - get_gametime();
+	if (aegisTime > 0.0)
+	{
+		new min = floatround(aegisTime / 60.0, floatround_floor);
+		new Float:realSec = aegisTime - float(min) * 60.0;
+		// So it doesn't stay in 00:00 for a whole second, I don't like it
+		new sec = min == 0 ? floatround(realSec) : floatround(realSec, floatround_floor);
+		formatex(aegisMsg, charsmax(aegisMsg), " (Aegis: %02d:%02d)", min, sec);
+	}
+	formatex(nexusMsg, charsmax(nexusMsg), "\n\nNexus HP: %d%s", floatround(nexusHP, floatround_ceil), aegisMsg);
 
 	set_hudmessage(g_HudRGB[0], g_HudRGB[1], g_HudRGB[2], 0.03, 0.25, 0, 0.0, 999999.0, 0.0, 0.0, -1);
 	for (new i = 0; i < playersNum; i++)
@@ -3339,7 +3687,7 @@ updateAimingHUD(players[MAX_PLAYERS], playersNum)
 
 			if (g_MonsterClass[ent][0])
 			{
-				copy(className, charsmax(className), g_MonsterClass[ent][MONSTER_ENTITY_NAME]);
+				copy(className, charsmax(className), g_MonsterClass[ent][MONSTER_DISPLAY_NAME]);
 
 				new msg[64], Float:hp;
 				pev(ent, pev_health, hp);
@@ -3358,6 +3706,9 @@ updateAimingHUD(players[MAX_PLAYERS], playersNum)
 
 public ShowMainMenu(id)
 {
+	if (!is_user_connected(id))
+		return PLUGIN_CONTINUE; // happens when a player leaves the server with the menu still active
+
 	new menu = menu_create("Main menu:", "HandleMainMenu");
 
 	menu_additem(menu, "Play",					"play",			_, g_MainMenuItemCallback);	// 1
@@ -3447,7 +3798,7 @@ public HandleMainMenu(id, menu, item)
 		return PLUGIN_HANDLED;
 	}
 
-	server_print("[main menu] itemKey: %s, item: %d", itemKey, item);
+	//server_print("[main menu] itemKey: %s, item: %d", itemKey, item);
 
 	ShowMainMenu(id);
 
@@ -3485,6 +3836,9 @@ public MainMenuItemCallback(id, menu, item)
 
 public ShowDifficultyMenu(id)
 {
+	if (!is_user_connected(id))
+		return PLUGIN_CONTINUE;
+
 	new menu = menu_create("Choose a difficulty:", "HandleDifficultyMenu");
 
 	for (new i = 0; i < sizeof(g_Difficulties); i++)
@@ -3516,6 +3870,9 @@ public HandleDifficultyMenu(id, menu, item)
 
 public ShowModeMenu(id, args[])
 {
+	if (!is_user_connected(id))
+		return PLUGIN_CONTINUE;
+	
 	new menu = menu_create("Choose a mode:", "HandleModeMenu");
 
 	for (new i = 0; i < sizeof(g_Modes); i++)
@@ -3556,7 +3913,7 @@ public HandleModeMenu(id, menu, item)
 
 	formatex(voteCmd, charsmax(voteCmd), "callvote \"agstart\" \"%s%s\"", itemKey, fullArg);
 
-	server_print("HandleModeMenu :: itemKey=%s, voteCmd=%s", itemKey, voteCmd);
+	//server_print("HandleModeMenu :: itemKey=%s, voteCmd=%s", itemKey, voteCmd);
 	
 	client_cmd(id, voteCmd);
 
@@ -3567,31 +3924,41 @@ public HandleModeMenu(id, menu, item)
 
 public ShowShopMenu(id)
 {
+	if (!is_user_connected(id))
+		return PLUGIN_CONTINUE;
+	
 	new menu = menu_create("Buy items:", "HandleShopMenu");
 
-	// TODO: improve code, could probably be less than this; e.g.: a struct with the item properties
-	// and iterate a Trie contaning instances of that type to make the menu
-	new Float:gaussPrice, Float:egonPrice, Float:repairPrice;
-	TrieGetCell(g_ShopItems, "gauss", gaussPrice);
-	TrieGetCell(g_ShopItems, "egon", egonPrice);
-	TrieGetCell(g_ShopItems, "repair", repairPrice);
-
-	// TODO: check if this should be floatround_ceil, rounding to 2 decimals or none at all;
-	// maybe there are prices with decimals in the future, affected by some feature or whatever
-	new gaussText[32], egonText[32], repairText[32];
-	formatex(gaussText,		charsmax(gaussText),	"Gauss (%dc)",			floatround(gaussPrice));
-	formatex(egonText,		charsmax(egonText),		"Egon (%dc)",			floatround(egonPrice));
-	formatex(repairText,	charsmax(repairText),	"Nexus repair (%dc)",	floatround(repairPrice));
-
-	menu_additem(menu, gaussText,	"gauss",	_, g_ShopMenuItemCallback);
-	menu_additem(menu, egonText,	"egon",		_, g_ShopMenuItemCallback);
-	menu_additem(menu, repairText,	"repair",	_, g_ShopMenuItemCallback);
+	// This is done like this so the menu it's slightly better organized (better sorting)
+	addShopMenuItems(menu, PURCHASABLE_WEAPON);
+	addShopMenuItems(menu, PURCHASABLE_NEXUS);
+	addShopMenuItems(menu, PURCHASABLE_OTHER);
 
 	menu_setprop(menu, MPROP_NOCOLORS, 0);
 
 	menu_display(id, menu);
 
 	return PLUGIN_HANDLED;
+}
+
+addShopMenuItems(menu, PURCHASABLE_TYPE:category)
+{
+	new TrieIter:it = TrieIterCreate(g_ShopItems);
+	while (!TrieIterEnded(it))
+	{
+		new item[PURCHASABLE];
+		TrieIterGetArray(it, item, PURCHASABLE);
+
+		if (item[PURCHASABLE_CATEGORY] == category)
+		{
+			new itemText[32];
+			formatex(itemText, charsmax(itemText), "%s (%dc)", item[PURCHASABLE_DISPLAY_NAME], floatround(item[PURCHASABLE_PRICE]));
+			menu_additem(menu, itemText, item[PURCHASABLE_NAME], _, g_ShopMenuItemCallback);
+		}
+		
+		TrieIterNext(it);
+	}
+	TrieIterDestroy(it);
 }
 
 public HandleShopMenu(id, menu, item)
@@ -3612,10 +3979,25 @@ public HandleShopMenu(id, menu, item)
 	else if (equal(itemKey, "egon"))
 		CmdBuyEgon(id);
 
+	else if (equal(itemKey, "satchel"))
+		CmdBuySatchel(id);
+
+	else if (equal(itemKey, "shotgun"))
+		CmdBuyShotgun(id);
+
+	else if (equal(itemKey, "aegis"))
+		CmdNexusAegis(id);
+
+	else if (equal(itemKey, "health"))
+		CmdBuyHealth(id);
+
 	else if (equal(itemKey, "repair"))
 		CmdNexusRepair(id);
 
-	server_print("[shop menu] itemKey: %s, item: %d", itemKey, item);
+	else if (equal(itemKey, "autorepair"))
+		CmdNexusAutoRepair(id);
+
+	//server_print("[shop menu] itemKey: %s, item: %d", itemKey, item);
 
 	ShowShopMenu(id);
 
@@ -3625,13 +4007,15 @@ public HandleShopMenu(id, menu, item)
 public ShopMenuItemCallback(id, menu, item)
 {
 	// TODO: refresh THIS menu when there are enough credits to buy some item that was disabled
+	// TODO: disable an item when the player already has the weapon AND max ammo for it
 
 	if (g_GameState != GAME_RUNNING)
 		return disableMenuItem(menu, item);
 
-	new itemKey[32], Float:price;
+	new itemKey[32], Float:price, itemData[PURCHASABLE];
 	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
-	TrieGetCell(g_ShopItems, itemKey, price);
+	TrieGetArray(g_ShopItems, itemKey, itemData, sizeof(itemData));
+	price = itemData[PURCHASABLE_PRICE];
 
 	if (g_PlayerCredits[id] < price)
 		return disableMenuItem(menu, item);
@@ -3641,6 +4025,9 @@ public ShopMenuItemCallback(id, menu, item)
 
 public ShowAdminMenu(id)
 {
+	if (!is_user_connected(id))
+		return PLUGIN_CONTINUE;
+	
 	if (get_user_flags(id) < ADMIN_CFG)
 		return PLUGIN_CONTINUE;
 
@@ -3677,8 +4064,6 @@ public HandleAdminMenu(id, menu, item)
 
 	else if (equal(itemKey, "spawn"))
 	{
-		// TODO: show a submenu with several pages to spawn any monster you want
-		//client_print(id, print_chat, "[%s] Sorry, the monster spawning menu isn't ready yet.", PLUGIN_TAG);
 		ShowSpawnMenu(id);
 		menu_destroy(menu);
 		return PLUGIN_HANDLED;
@@ -3704,7 +4089,7 @@ public HandleAdminMenu(id, menu, item)
 	else if (equal(itemKey, "dump"))
 		dumpEntities();
 
-	server_print("[admin menu] itemKey: %s, item: %d", itemKey, item);
+	//server_print("[admin menu] itemKey: %s, item: %d", itemKey, item);
 
 	ShowAdminMenu(id);
 
@@ -3727,6 +4112,9 @@ public AdminMenuItemCallback(id, menu, item)
 
 public ShowSpawnMenu(id)
 {
+	if (!is_user_connected(id))
+		return PLUGIN_CONTINUE;
+	
 	if (get_user_flags(id) < ADMIN_CFG)
 		return PLUGIN_CONTINUE;
 
@@ -3744,8 +4132,7 @@ public ShowSpawnMenu(id)
 			continue;
 		}
 
-		// TODO: pretty print the monster name to show in the menu, e.g.: monster_alien_controller -> Alien Controller
-		menu_additem(menu, data[MONSTER_ENTITY_NAME], data[MONSTER_ENTITY_NAME]);
+		menu_additem(menu, data[MONSTER_DISPLAY_NAME], data[MONSTER_ENTITY_NAME]);
 		
 		TrieIterNext(it);
 	}
@@ -3782,6 +4169,9 @@ public HandleSpawnMenu(id, menu, item)
 
 public ShowRemoveMenu(id)
 {
+	if (!is_user_connected(id))
+		return PLUGIN_CONTINUE;
+	
 	if (get_user_flags(id) < ADMIN_CFG)
 		return PLUGIN_CONTINUE;
 
@@ -3944,7 +4334,7 @@ spawnGibs(id, model[], minSpread, maxSpread, minGibs, maxGibs)
 		write_coord(origin[0] + random_num(-16, 16));
 		write_coord(origin[1] + random_num(-16, 16));
 		write_coord(origin[2] + random_num(0, 16));
-		server_print("spawning gibs at {%d, %d, %d}", origin[0], origin[1], origin[2]);
+		//server_print("spawning gibs at {%d, %d, %d}", origin[0], origin[1], origin[2]);
 		
 		// Size
 		write_coord(32);
@@ -3987,4 +4377,9 @@ getColorlessName(id, name[], len)
 		i++;
 	}
 	name[j] = 0;
+}
+
+Float:fmod(Float:a, Float:n)
+{
+    return a - n * floatround(a / n);
 }
