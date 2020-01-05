@@ -605,6 +605,26 @@ new const g_GarbageEntities[][] =
 	"weaponbox"
 };
 
+new const g_FullAmmoItems[][] =
+{ // Same order as HLW_*
+	"",
+	"weapon_crowbar",
+	"weapon_9mmhandgun",
+	"weapon_357",
+	"weapon_9mmar",
+	"",
+	"weapon_crossbow",
+	"weapon_shotgun",
+	"weapon_rpg",
+	"weapon_gauss",
+	"weapon_egon",
+	"weapon_hornetgun",
+	"weapon_grenade",
+	"weapon_tripmine",
+	"weapon_satchel",
+	"weapon_snark"
+};
+
 new const g_Difficulties[][] = {
 	"survival",
 	"test",
@@ -660,7 +680,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.6-alpha";
+new const VERSION[]					= "0.9.7-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -855,17 +875,20 @@ public plugin_init()
 	register_clcmd("say adstart",		"CmdStart",			_,			"- alias for agstart normal; that is, start a game in normal difficulty");
 	register_clcmd("say /unsatchel",	"CmdUnsatchel");
 
-	// Shop items: weapons
+	// Shop category: weapons
 	register_clcmd("say /egon",			"CmdBuyEgon");
 	register_clcmd("say /gauss",		"CmdBuyGauss");
 	register_clcmd("say /satchel",		"CmdBuySatchel");
 	register_clcmd("say /shotgun",		"CmdBuyShotgun");
 
-	// Shop items: other
-	register_clcmd("say /health",		"CmdBuyHealth");
+	// Shop category: nexus
 	register_clcmd("say /aegis",		"CmdNexusAegis");
 	register_clcmd("say /autorepair",	"CmdNexusAutoRepair");
 	register_clcmd("say /repair",		"CmdNexusRepair");
+
+	// Shop category: other
+	register_clcmd("say /health",	"CmdBuyHealth");
+	register_clcmd("say /full",		"CmdBuyFullAmmo");
 
 	// Menus
 	register_clcmd("say /menu",			"ShowMainMenu");
@@ -914,6 +937,8 @@ public plugin_init()
 
 	register_forward(FM_ShouldCollide,	"FwShouldCollide");
 	register_forward(FM_RemoveEntity,	"FwEntityRemovalPost", 1);
+
+	//register_touch("weaponbox", "worldspawn", "FwWeaponboxRespawn");
 
 	for (new i = 0; i < sizeof(g_GarbageEntities); i++)
 	{
@@ -1321,6 +1346,7 @@ loadShop()
 	insertShopItem("repair",		"Nexus repair",		2000.0,	PURCHASABLE_NEXUS);
 
 	insertShopItem("health",		"2 medkits",		20.0);
+	insertShopItem("fullammo",		"Full ammo",		400.0);
 }
 
 insertShopItem(name[], displayName[], Float:price, PURCHASABLE_TYPE:itemType=PURCHASABLE_OTHER)
@@ -2032,6 +2058,7 @@ public CmdBuyGauss(id)
 	return PLUGIN_HANDLED;
 }
 
+// FIXME: can't get a satchel if the satchel radio is on, but money is spent anyways; might be fixed simply setting bpammo
 public CmdBuySatchel(id)
 {
 	new ammo = get_pdata_int(id, 313);
@@ -2083,6 +2110,60 @@ public CmdBuyHealth(id)
 			hp = 100;
 
 		hl_set_user_health(id, hp);
+
+		g_PlayerCredits[id] -= price;
+	}
+	else
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to autorepair the Nexus.",
+			PLUGIN_TAG, floatround(price));
+
+	return PLUGIN_HANDLED;
+}
+
+public CmdBuyFullAmmo(id)
+{
+	new Float:price, item[PURCHASABLE];
+	TrieGetArray(g_ShopItems, "fullammo", item, sizeof(item));
+	price = item[PURCHASABLE_PRICE];
+
+	//new className[32];
+	//new weaponId	= get_pdata_cbase(id, 301);
+	//new ammo		= hl_get_weapon_ammo(weaponId);
+	//pev(weaponId, pev_classname, className, charsmax(className));
+
+	//server_print("weaponId: %d (%s), ammo: %d", weaponId, className, ammo);
+
+	if (g_PlayerCredits[id] >= price)
+	{
+		for (new i = 0; i < sizeof(g_FullAmmoItems); i++)
+		{
+			if (!g_FullAmmoItems[i][0] || user_has_weapon(id, i))
+				continue;
+
+			give_item(id, g_FullAmmoItems[i]);
+		}
+
+		// TODO: give also clip ammo, not only backpack ammo, save weapon ids that players carry
+		// and remove the if they drop them, or just iterate all the weapon entities in the map and
+		// check the pev_owner, althought idk if all of them can be iterated or they just disappear
+		// if they're in the inventory (not active weapon) and somehow respawn when the player selects it
+
+		hl_set_user_bpammo(id, HLW_GLOCK,		_9MM_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_PYTHON,		_357_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_CHAINGUN,	M203_GRENADE_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_CROSSBOW,	BOLT_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_SHOTGUN,		BUCKSHOT_MAX_CARRY - 24);
+		hl_set_user_bpammo(id, HLW_RPG,			ROCKET_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_GAUSS,		URANIUM_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_HORNETGUN,	HORNET_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_HANDGRENADE,	HANDGRENADE_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_TRIPMINE,	TRIPMINE_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_SATCHEL,		SATCHEL_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_SNARK,		SNARK_MAX_CARRY);
+
+		hl_set_user_longjump(id);
+
+		hl_set_user_health(id, hl_get_user_health(id) + 150); // this is intended, more than 100hp possible
 
 		g_PlayerCredits[id] -= price;
 	}
@@ -3988,14 +4069,17 @@ public HandleShopMenu(id, menu, item)
 	else if (equal(itemKey, "aegis"))
 		CmdNexusAegis(id);
 
-	else if (equal(itemKey, "health"))
-		CmdBuyHealth(id);
-
 	else if (equal(itemKey, "repair"))
 		CmdNexusRepair(id);
 
 	else if (equal(itemKey, "autorepair"))
 		CmdNexusAutoRepair(id);
+
+	else if (equal(itemKey, "health"))
+		CmdBuyHealth(id);
+
+	else if (equal(itemKey, "fullammo"))
+		CmdBuyFullAmmo(id);
 
 	//server_print("[shop menu] itemKey: %s, item: %d", itemKey, item);
 
