@@ -229,6 +229,13 @@ enum _:ENTITY_STATE
 	ENT_FLAGS
 }
 
+enum _:WEAPON
+{
+	WEAPON_DEFAULT_AMMO,
+	WEAPON_MAX_CLIP,
+	WEAPON_MAX_BPAMMO
+}
+
 enum _:MONSTER_DATA
 {
 	MONSTER_ENTITY_NAME[32],
@@ -604,14 +611,31 @@ new const g_GarbageEntities[][] =
 	"gib",
 	"weaponbox"
 };
-
-new const g_FullAmmoItems[][] =
+/*
+new const g_Ammo[][] =
+{
+	"",
+	"ammo_buckshot",
+	"ammo_9mmclip",
+	"ammo_ARgrenades",
+	"ammo_357",
+	"ammo_gaussclip",
+	"ammo_rpgclip",
+	"ammo_crossbow",
+	"weapon_tripmine",
+	"weapon_satchel",
+	"weapon_handgrenade",
+	"weapon_snark",
+	"weapon_hornetgun"
+};
+*/
+new const g_Weapons[][] =
 { // Same order as HLW_*
 	"",
 	"weapon_crowbar",
 	"weapon_9mmhandgun",
 	"weapon_357",
-	"weapon_9mmar",
+	"weapon_9mmAR",
 	"",
 	"weapon_crossbow",
 	"weapon_shotgun",
@@ -619,12 +643,33 @@ new const g_FullAmmoItems[][] =
 	"weapon_gauss",
 	"weapon_egon",
 	"weapon_hornetgun",
-	"weapon_grenade",
+	"weapon_handgrenade",
 	"weapon_tripmine",
 	"weapon_satchel",
 	"weapon_snark"
 };
 
+/*
+new const g_WeaponNames[][] =
+{
+	"",
+	"Crowbar",
+	"Glock",
+	"Magnum",
+	"9mmAR",
+	"ARGrenade",
+	"Crossbow",
+	"Shotgun",
+	"RPG",
+	"Gauss",
+	"Egon",
+	"Hornetgun",
+	"Handgrenade",
+	"Tripmine",
+	"Satchel",
+	"Snark"
+};
+*/
 new const g_Difficulties[][] = {
 	"survival",
 	"test",
@@ -680,7 +725,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.7-alpha";
+new const VERSION[]					= "0.9.8-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -698,12 +743,13 @@ new g_AdminMenuItemCallback;
 //new g_SpawnMenuItemCallback;
 //new g_RemoveMenuItemCallback;
 
-// Stores entities with key wp_id and such, so you can create waypoints with VHE/JACK/Sledge, compile map,
+// Stores entities with key wp_id and such, so you can create waypoints with VHE/JACK/Sledge/etc., compile map,
 // run it and copy the corresponding console output to a waypoints.ini
 new g_WaypointsArr[MAX_ENTITIES+1][WAYPOINT];
 new Trie:g_Waypoints;
 new Trie:g_Gibs; // model_path -> [model_number, material]; e.g.: "models/woodgibs.mdl" -> [2, BREAK_WOOD]
 new Trie:g_ShopItems; // name -> price; e.g.: "gauss" -> 150.0
+new g_WeaponInfo[16][WEAPON];
 new Trie:g_MonsterData;
 new Array:g_MonsterTypesPerRound; // rounds are stored here, and each round is an Array of monsters that will be spawned
 new Array:g_MonsterSpawns;
@@ -721,6 +767,7 @@ new Float:g_GarbageSpawnTime[MAX_ENTITIES+1];
 new Float:g_PlayerScore[MAX_PLAYERS+1]; // TODO: this score should be restored when player leaves and rejoins if the same game is still ongoing
 new Float:g_PlayerCredits[MAX_PLAYERS+1];
 new g_PlayerLastSatchel[MAX_PLAYERS+1]; // last thrown satchel's entity's index
+new g_PlayerWeapons[MAX_PLAYERS+1][16];
 
 new g_MaxPlayers;
 new Array:g_MonstersAlive;
@@ -801,7 +848,6 @@ public plugin_precache()
 		TrieSetArray(g_Gibs, g_GibModels[i], data, sizeof(data));
 	}
 
-	//g_Waypoints = TrieCreate();
 	register_forward(FM_KeyValue, "FwKeyValue");
 }
 
@@ -848,14 +894,13 @@ public plugin_init()
 	pcvar_ad_max_satchels			= register_cvar("ad_max_satchels", "40");
 
 	// HL/AG messages
-	new msgCountdown	= get_user_msgid("Countdown");
-	new msgSettings		= get_user_msgid("Settings");
-	new msgVote			= get_user_msgid("Vote");
+	register_message(get_user_msgid("Countdown"),	"FwMsgCountdown");
+	register_message(get_user_msgid("Settings"),	"FwMsgSettings");
+	register_message(get_user_msgid("Vote"),		"FwMsgVote");
 
-	register_message(msgCountdown,	"FwMsgCountdown");
-	register_message(msgSettings,	"FwMsgSettings");
-	register_message(msgVote,		"FwMsgVote");
+	register_event("DeathMsg", "FwDeathMsg", "a");
 
+	initWeaponInfo();
 	configureMonsters();
 
 	register_clcmd("ad_print_target",	"CmdPrintTarget");
@@ -874,6 +919,7 @@ public plugin_init()
 	register_clcmd("say ad_start", 		"CmdStart",			_,			"- alias for agstart normal; that is, start a game in normal difficulty");
 	register_clcmd("say adstart",		"CmdStart",			_,			"- alias for agstart normal; that is, start a game in normal difficulty");
 	register_clcmd("say /unsatchel",	"CmdUnsatchel");
+	register_clcmd("say /myweapons",	"CmdMyWeapons");
 
 	// Shop category: weapons
 	register_clcmd("say /egon",			"CmdBuyEgon");
@@ -887,8 +933,8 @@ public plugin_init()
 	register_clcmd("say /repair",		"CmdNexusRepair");
 
 	// Shop category: other
-	register_clcmd("say /health",	"CmdBuyHealth");
-	register_clcmd("say /full",		"CmdBuyFullAmmo");
+	register_clcmd("say /health",		"CmdBuyHealth");
+	register_clcmd("say /full",			"CmdBuyFullAmmo");
 
 	// Menus
 	register_clcmd("say /menu",			"ShowMainMenu");
@@ -935,10 +981,12 @@ public plugin_init()
 	RegisterHam(Ham_Weapon_SecondaryAttack,	"weapon_satchel",	"FwThrowSatchel2Pre");
 	RegisterHam(Ham_Spawn,					"monster_satchel",	"FwSatchelSpawnPost", 1);
 
+	RegisterHam(Ham_Spawn,					"player",			"FwPlayerSpawnPre");
+	RegisterHam(Ham_AddPlayerItem,			"player",			"FwAddPlayerItem");
+	RegisterHam(Ham_RemovePlayerItem,		"player",			"FwRemovePlayerItem");
+
 	register_forward(FM_ShouldCollide,	"FwShouldCollide");
 	register_forward(FM_RemoveEntity,	"FwEntityRemovalPost", 1);
-
-	//register_touch("weaponbox", "worldspawn", "FwWeaponboxRespawn");
 
 	for (new i = 0; i < sizeof(g_GarbageEntities); i++)
 	{
@@ -1133,17 +1181,46 @@ configureServer()
 	server_cmd("sv_ag_vote_start 1");
 }
 
+initWeaponInfo()
+{
+	addWeaponInfo(HLW_CROWBAR,		0,	CROWBAR_MAX_CLIP,		WEAPON_NOCLIP);
+	addWeaponInfo(HLW_GLOCK,		85,	GLOCK_MAX_CLIP,			_9MM_MAX_CARRY);
+	addWeaponInfo(HLW_PYTHON,		6,	PYTHON_MAX_CLIP,		_357_MAX_CARRY);
+	addWeaponInfo(HLW_MP5,			25,	MP5_MAX_CLIP,			_9MM_MAX_CARRY);
+	addWeaponInfo(HLW_CHAINGUN,		2,	WEAPON_NOCLIP,			M203_GRENADE_MAX_CARRY);
+	addWeaponInfo(HLW_CROSSBOW,		5,	CROSSBOW_MAX_CLIP,		BOLT_MAX_CARRY);
+	addWeaponInfo(HLW_SHOTGUN,		12,	SHOTGUN_MAX_CLIP,		BUCKSHOT_MAX_CARRY);
+	addWeaponInfo(HLW_RPG,			2,	RPG_MAX_CLIP,			ROCKET_MAX_CARRY);
+	addWeaponInfo(HLW_GAUSS,		20,	GAUSS_MAX_CLIP,			URANIUM_MAX_CARRY);
+	addWeaponInfo(HLW_EGON,			20,	EGON_MAX_CLIP,			URANIUM_MAX_CARRY);
+	addWeaponInfo(HLW_HORNETGUN,	8,	HORNETGUN_MAX_CLIP,		HORNET_MAX_CARRY);
+	addWeaponInfo(HLW_HANDGRENADE,	5,	HANDGRENADE_MAX_CLIP,	HANDGRENADE_MAX_CARRY);
+	addWeaponInfo(HLW_TRIPMINE,		1,	TRIPMINE_MAX_CLIP,		TRIPMINE_MAX_CARRY);
+	addWeaponInfo(HLW_SATCHEL,		1,	SATCHEL_MAX_CLIP,		SATCHEL_MAX_CARRY);
+	addWeaponInfo(HLW_SNARK,		5,	SNARK_MAX_CLIP,			SNARK_MAX_CARRY);
+}
+
+addWeaponInfo(weaponId, defaultAmmo, maxClip, maxBpAmmo)
+{
+	g_WeaponInfo[weaponId][WEAPON_DEFAULT_AMMO]	= defaultAmmo;
+	g_WeaponInfo[weaponId][WEAPON_MAX_CLIP]		= maxClip;
+	g_WeaponInfo[weaponId][WEAPON_MAX_BPAMMO]	= maxBpAmmo;
+}
+
 insertMonsterData(monsterType[], displayName[], monsterModel[], Float:damage, Float:health, Float:speed, bool:isCustom, bool:isAirborne)
 {
 	new data[MONSTER_DATA];
-	copy(data[MONSTER_ENTITY_NAME], charsmax(data[MONSTER_ENTITY_NAME]), monsterType);
-	copy(data[MONSTER_DISPLAY_NAME], charsmax(data[MONSTER_DISPLAY_NAME]), displayName);
-	copy(data[MONSTER_MODEL], charsmax(data[MONSTER_MODEL]), monsterModel);
-	data[MONSTER_DAMAGE] = damage;
-	data[MONSTER_HEALTH] = health;
-	data[MONSTER_SPEED] = speed;
-	data[MONSTER_IS_CUSTOM] = isCustom;
-	data[MONSTER_IS_AIRBORNE] = isAirborne;
+
+	copy(data[MONSTER_ENTITY_NAME],		charsmax(data[MONSTER_ENTITY_NAME]),	monsterType);
+	copy(data[MONSTER_DISPLAY_NAME],	charsmax(data[MONSTER_DISPLAY_NAME]),	displayName);
+	copy(data[MONSTER_MODEL],			charsmax(data[MONSTER_MODEL]),			monsterModel);
+
+	data[MONSTER_DAMAGE]		= damage;
+	data[MONSTER_HEALTH]		= health;
+	data[MONSTER_SPEED]			= speed;
+	data[MONSTER_IS_CUSTOM]		= isCustom;
+	data[MONSTER_IS_AIRBORNE]	= isAirborne;
+
 	TrieSetArray(g_MonsterData, data[MONSTER_ENTITY_NAME], data, sizeof(data));
 }
 
@@ -1516,7 +1593,7 @@ public FwMsgVote(id)
 
 		if (g_CurrMode == MODE_COMPETITIVE && g_IsAgstartFull)
 		{
-			server_print("Someone's trying to trick the system... we'll restart now without 'full' as we're in competitive");
+			server_print("[%s] Someone's trying to trick the system... we'll restart now without 'full' as we're in competitive", PLUGIN_TAG);
 
 			server_cmd("agabort");
 			server_exec();
@@ -1528,6 +1605,19 @@ public FwMsgVote(id)
 			return;
 		}
 	}
+}
+
+public FwDeathMsg()
+{
+	new victim = read_data(2);
+
+	for (new i = 0; i < sizeof(g_PlayerWeapons[]); i++)
+		g_PlayerWeapons[victim][i] = 0;
+
+	new playerName[32];
+	getColorlessName(victim, playerName, charsmax(playerName));
+
+	server_print("[FwDeathMsg] %s died", playerName);
 }
 
 public FwGetGameDescriptionPre()
@@ -1672,7 +1762,7 @@ public FwPlayerDeath(id, attacker, shouldGib)
 }
 
 // Satchel primary attack
-public FwThrowSatchelPre(weaponId)
+public FwThrowSatchelPre(weapon)
 {
 	new ent = FM_NULLENT, satchelCount = 0;
 	while(ent = find_ent_by_class(ent, "monster_satchelcharge"))
@@ -1683,7 +1773,7 @@ public FwThrowSatchelPre(weaponId)
 		satchelCount++;
 
 	new maxSatchels = get_pcvar_num(pcvar_ad_max_satchels);
-	new ownerId = pev(weaponId, pev_owner);
+	new ownerId = pev(weapon, pev_owner);
 	new weaponModel2[32];
 	pev(ownerId, pev_weaponmodel2, weaponModel2, charsmax(weaponModel2));
 	if (equali(weaponModel2, "models/p_satchel.mdl"))
@@ -1716,7 +1806,7 @@ public FwThrowSatchelPre(weaponId)
 
 // Satchel secondary attack
 // FIXME: avoid spamming the max satchels message
-public FwThrowSatchel2Pre(weaponId)
+public FwThrowSatchel2Pre(weapon)
 {
 	new ent = FM_NULLENT, satchelCount = 0;
 	while(ent = find_ent_by_class(ent, "monster_satchelcharge"))
@@ -1727,7 +1817,7 @@ public FwThrowSatchel2Pre(weaponId)
 		satchelCount++;
 
 	new maxSatchels = get_pcvar_num(pcvar_ad_max_satchels);
-	new ownerId = pev(weaponId, pev_owner);
+	new ownerId = pev(weapon, pev_owner);
 	if (satchelCount >= maxSatchels)
 	{
 		client_print(ownerId, print_chat, "[%s] Sorry, can't put any more satchels because there are already %d in the map.", PLUGIN_TAG, maxSatchels);
@@ -1752,6 +1842,40 @@ public FwSatchelSpawnPost(id)
 		else
 			set_pev(id, pev_solid, SOLID_BBOX);
 	}
+}
+
+public FwPlayerSpawnPre(id)
+{
+	//server_print("[%.4f] player %d spawned", get_gametime(), id);
+
+	for (new i = 0; i < sizeof(g_PlayerWeapons[]); i++)
+		g_PlayerWeapons[id][i] = 0;
+}
+
+public FwAddPlayerItem(id, weapon)
+{
+	new weaponId = hl_get_weapon_id(weapon);
+
+	if (!g_PlayerWeapons[id][weaponId])
+		g_PlayerWeapons[id][weaponId] = weapon;
+
+	new weaponName[32], playerName[32];
+	pev(weapon, pev_classname, weaponName, charsmax(weaponName));
+	getColorlessName(id, playerName, charsmax(playerName));
+
+	//server_print("[%.4f] [FwAddPlayerItem] %s received %s (%d)", get_gametime(), playerName, weaponName, weapon);
+}
+
+public FwRemovePlayerItem(id, weapon)
+{
+	new weaponId = hl_get_weapon_id(weapon);
+	g_PlayerWeapons[id][weaponId] = 0;
+
+	new weaponName[32], playerName[32];
+	pev(weapon, pev_classname, weaponName, charsmax(weaponName));
+	getColorlessName(id, playerName, charsmax(playerName));
+
+	//server_print("[FwRemovePlayerItem] %s lost %s (%d)", playerName, weaponName, weapon);
 }
 
 public FwGarbageSpawnPost(id)
@@ -1833,7 +1957,7 @@ public FwMonsterKilledPost(id, attacker, shouldGib)
 	new index = ArrayFindValue(g_MonstersAlive, id);
 	if (index > -1)
 	{
-		server_print("[%s] Removing from alive monster #%d", PLUGIN_TAG, id);
+		//server_print("[%s] Removing from alive monster #%d", PLUGIN_TAG, id);
 		ArrayDeleteItem(g_MonstersAlive, index);
 	}
 	
@@ -1848,6 +1972,16 @@ public FwMonsterKilledPost(id, attacker, shouldGib)
 public RemoveGonarch(taskId)
 {
 	new id = taskId - TASKID_GONARCH_REMOVAL;
+
+	if (!pev_valid(id))
+		return;
+
+	new className[32];
+	pev(id, pev_classname, className, charsmax(className));
+
+	if (!equal(className, "monster_bigmomma"))
+		return;
+
 	server_print("[%s] Removing gonarch #%d", PLUGIN_TAG, id);
 	remove_entity(id);
 }
@@ -1934,6 +2068,37 @@ public CmdUnsatchel(id)
 	return PLUGIN_HANDLED;
 }
 
+public CmdMyWeapons(id)
+{
+	for (new i = 0; i < sizeof(g_PlayerWeapons[]); i++)
+	{
+		new weapon = g_PlayerWeapons[id][i];
+
+		if (!weapon && !pev_valid(weapon))
+			continue;
+
+		new weaponName[32];
+		pev(weapon, pev_classname, weaponName, charsmax(weaponName));
+
+		if (!equal(weaponName, "weapon_", 7))
+		{
+			new playerName[32];
+			getColorlessName(id, playerName, charsmax(playerName));
+
+			server_print("[%s] [WARNING] Found a non-weapon entity while iterating player weapons: %s (id: %d, player: %s (id: %d))",
+				PLUGIN_TAG, weaponName, weapon, playerName, id);
+			continue;
+		}
+
+		new clip = hl_get_weapon_ammo(weapon);
+		new ammo = hl_get_user_bpammo(id, i);
+
+		server_print("%d. %s (clip: %d, ammo: %d)", i, weaponName, clip, ammo);
+	}
+
+	return PLUGIN_HANDLED;
+}
+
 public CmdDumpEntities(id, level, cid)
 {
 	if (!cmd_access(id, level, cid, 1))
@@ -1961,13 +2126,21 @@ dumpEntities()
 	{
 		if (pev_valid(i))
 		{
-			new className[32];
+			new className[32], ownerStr[32], owner;
 			pev(i, pev_classname, className, charsmax(className));
+			owner = pev(i, pev_owner);
+			
+			if (owner)
+			{
+				new playerName[32];
+				getColorlessName(owner, playerName, charsmax(playerName));
+				formatex(ownerStr, charsmax(ownerStr), " (owner: %s)", playerName);
+			}
 
-			fprintf(file, "%d %s\n", i, className);
+			fprintf(file, "%d %s%s\n", i, className, owner);
 		}
 		else
-			fprintf(file, "%d Invalid\n", i);
+			fprintf(file, "%d -\n", i);
 	}
 	fclose(file);
 }
@@ -2032,66 +2205,64 @@ public CmdNexusAutoRepair(id)
 
 public CmdBuyEgon(id)
 {
-	new ammo = get_pdata_int(id, 309);
-
-	if (user_has_weapon(id, HLW_EGON) && ammo == URANIUM_MAX_CARRY)
+	if (!is_user_alive(id) || isSpectator(id))
 	{
-		client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for this weapon.", PLUGIN_TAG);
+		client_print(id, print_chat, "[%s] Sorry, you have to be alive to buy items.", PLUGIN_TAG);
 		return PLUGIN_HANDLED;
 	}
+	
+	buyWeapon(id, HLW_EGON);
 
-	buyWeapon(id, "egon");
 	return PLUGIN_HANDLED;
 }
 
 public CmdBuyGauss(id)
 {
-	new ammo = get_pdata_int(id, 309);
-
-	if (user_has_weapon(id, HLW_GAUSS) && ammo == URANIUM_MAX_CARRY)
+	if (!is_user_alive(id) || isSpectator(id))
 	{
-		client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for this weapon.", PLUGIN_TAG);
+		client_print(id, print_chat, "[%s] Sorry, you have to be alive to buy weapons.", PLUGIN_TAG);
 		return PLUGIN_HANDLED;
 	}
+	
+	buyWeapon(id, HLW_GAUSS);
 
-	buyWeapon(id, "gauss");
 	return PLUGIN_HANDLED;
 }
 
-// FIXME: can't get a satchel if the satchel radio is on, but money is spent anyways; might be fixed simply setting bpammo
 public CmdBuySatchel(id)
 {
-	new ammo = get_pdata_int(id, 313);
-
-	if (user_has_weapon(id, HLW_SATCHEL) && ammo == SATCHEL_MAX_CARRY)
+	if (!is_user_alive(id) || isSpectator(id))
 	{
-		client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for this weapon.", PLUGIN_TAG);
+		client_print(id, print_chat, "[%s] Sorry, you have to be alive to buy weapons.", PLUGIN_TAG);
 		return PLUGIN_HANDLED;
 	}
+	
+	buyWeapon(id, HLW_SATCHEL);
 
-	buyWeapon(id, "satchel");
 	return PLUGIN_HANDLED;
 }
 
 public CmdBuyShotgun(id)
 {
-	// TODO: find a way to refill the clip if you have 125 ammo in the backpack but 0 in the clip,
-	// because giving the shotgun weapon when 0 clip doesn't refill it for some reason, only adds
-	// to the ammo
-	new ammo = get_pdata_int(id, 305);
-
-	if (user_has_weapon(id, HLW_SHOTGUN) && ammo == BUCKSHOT_MAX_CARRY)
+	if (!is_user_alive(id) || isSpectator(id))
 	{
-		client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for this weapon.", PLUGIN_TAG);
+		client_print(id, print_chat, "[%s] Sorry, you have to be alive to buy weapons.", PLUGIN_TAG);
 		return PLUGIN_HANDLED;
 	}
 
-	buyWeapon(id, "shotgun");
+	buyWeapon(id, HLW_SHOTGUN);
+
 	return PLUGIN_HANDLED;
 }
 
 public CmdBuyHealth(id)
 {
+	if (!is_user_alive(id) || isSpectator(id))
+	{
+		client_print(id, print_chat, "[%s] Sorry, you have to be alive to buy medkits.", PLUGIN_TAG);
+		return PLUGIN_HANDLED;
+	}
+
 	new Float:price, item[PURCHASABLE];
 	TrieGetArray(g_ShopItems, "health", item, sizeof(item));
 	price = item[PURCHASABLE_PRICE];
@@ -2114,7 +2285,7 @@ public CmdBuyHealth(id)
 		g_PlayerCredits[id] -= price;
 	}
 	else
-		client_print(id, print_chat, "[%s] Sorry, you need %d credits to autorepair the Nexus.",
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to buy 2 medkits.",
 			PLUGIN_TAG, floatround(price));
 
 	return PLUGIN_HANDLED;
@@ -2122,44 +2293,51 @@ public CmdBuyHealth(id)
 
 public CmdBuyFullAmmo(id)
 {
+	if (!is_user_alive(id) || isSpectator(id))
+	{
+		client_print(id, print_chat, "[%s] Sorry, you have to be alive to buy weapons.", PLUGIN_TAG);
+		return PLUGIN_HANDLED;
+	}
+
 	new Float:price, item[PURCHASABLE];
 	TrieGetArray(g_ShopItems, "fullammo", item, sizeof(item));
 	price = item[PURCHASABLE_PRICE];
 
-	//new className[32];
-	//new weaponId	= get_pdata_cbase(id, 301);
-	//new ammo		= hl_get_weapon_ammo(weaponId);
-	//pev(weaponId, pev_classname, className, charsmax(className));
-
-	//server_print("weaponId: %d (%s), ammo: %d", weaponId, className, ammo);
-
 	if (g_PlayerCredits[id] >= price)
 	{
-		for (new i = 0; i < sizeof(g_FullAmmoItems); i++)
+		// Give lacking weapons and set clip ammo
+		for (new i = 0; i < sizeof(g_PlayerWeapons[]); i++)
 		{
-			if (!g_FullAmmoItems[i][0] || user_has_weapon(id, i))
+			if (!strlen(g_Weapons[i]))
 				continue;
 
-			give_item(id, g_FullAmmoItems[i]);
+			new weapon = g_PlayerWeapons[id][i];
+
+			if (!weapon)
+			{
+				weapon = give_item(id, g_Weapons[i]);
+				new className[32];
+				pev(weapon, pev_classname, className, charsmax(className));
+
+				//server_print("weapon: %s (%d)", className, weapon);
+				g_PlayerWeapons[id][i] = weapon;
+			}
+			else
+			{
+				new clip = g_WeaponInfo[i][WEAPON_MAX_CLIP];
+
+				new className[32];
+				pev(weapon, pev_classname, className, charsmax(className));
+
+				//server_print("weapon: %s (%d), clip: %d", className, weapon, clip);
+				if (clip > 0)
+					hl_set_weapon_ammo(weapon, clip);
+			}
+
+			if (g_WeaponInfo[i][WEAPON_MAX_BPAMMO] > 0 && g_WeaponInfo[i][WEAPON_MAX_BPAMMO] < 256)
+				hl_set_user_bpammo(id, i, g_WeaponInfo[i][WEAPON_MAX_BPAMMO]);
 		}
-
-		// TODO: give also clip ammo, not only backpack ammo, save weapon ids that players carry
-		// and remove the if they drop them, or just iterate all the weapon entities in the map and
-		// check the pev_owner, althought idk if all of them can be iterated or they just disappear
-		// if they're in the inventory (not active weapon) and somehow respawn when the player selects it
-
-		hl_set_user_bpammo(id, HLW_GLOCK,		_9MM_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_PYTHON,		_357_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_CHAINGUN,	M203_GRENADE_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_CROSSBOW,	BOLT_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_SHOTGUN,		BUCKSHOT_MAX_CARRY - 24);
-		hl_set_user_bpammo(id, HLW_RPG,			ROCKET_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_GAUSS,		URANIUM_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_HORNETGUN,	HORNET_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_HANDGRENADE,	HANDGRENADE_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_TRIPMINE,	TRIPMINE_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_SATCHEL,		SATCHEL_MAX_CARRY);
-		hl_set_user_bpammo(id, HLW_SNARK,		SNARK_MAX_CARRY);
+		hl_set_user_bpammo(id, HLW_CHAINGUN, M203_GRENADE_MAX_CARRY);
 
 		hl_set_user_longjump(id);
 
@@ -2168,25 +2346,10 @@ public CmdBuyFullAmmo(id)
 		g_PlayerCredits[id] -= price;
 	}
 	else
-		client_print(id, print_chat, "[%s] Sorry, you need %d credits to autorepair the Nexus.",
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to buy full ammo.",
 			PLUGIN_TAG, floatround(price));
 
 	return PLUGIN_HANDLED;
-}
-
-buyWeapon(id, weapon[])
-{
-	new Float:price, item[PURCHASABLE];
-	TrieGetArray(g_ShopItems, weapon, item, sizeof(item));
-	price = item[PURCHASABLE_PRICE];
-
-	if (g_PlayerCredits[id] >= price)
-	{
-		if (giveWeapon(id, weapon))
-			g_PlayerCredits[id] -= price;
-	}
-	else
-		client_print(id, print_chat, "[%s] Sorry, you need %d credits to buy %s.", PLUGIN_TAG, floatround(price), weapon);
 }
 
 public CmdNexusAegis(id)
@@ -3282,13 +3445,13 @@ monsterReachedNexus(id)
 
 		if (newNexusHP <= 0.0)
 		{
-			server_print("The Nexus has been destroyed by monsters");
+			server_print("[%s] The Nexus has been destroyed by monsters", PLUGIN_TAG);
 			nexusDestroyed();
 		}
 		else
 			set_pev(g_Nexus, pev_health, newNexusHP);
 	}
-	//server_print("Removing monster #%d that has reached the Nexus", id);
+	//server_print("[%s] Removing monster #%d that has reached the Nexus", PLUGIN_TAG, id);
 	removeMonster(id);
 }
 
@@ -3339,7 +3502,7 @@ removeMonster(id, bool:removeFromAlive=true)
 			index = ArrayFindValue(g_MonstersAlive, id);
 			if (index > -1)
 			{
-				server_print("Removing monster #%d", id);
+				//server_print("[%s] Removing monster #%d", PLUGIN_TAG, id);
 				ArrayDeleteItem(g_MonstersAlive, index);
 			}
 		}
@@ -3349,7 +3512,7 @@ removeMonster(id, bool:removeFromAlive=true)
 		if (TrieGetArray(g_MonsterData, className, aux, sizeof(aux)))
 		{
 			// Finally take that bitch outta this game
-			server_print("Removing monster entity #%d", id);
+			//server_print("[%s] Removing monster entity #%d", PLUGIN_TAG, id);
 			remove_entity(id);
 		}
 	}
@@ -3359,7 +3522,7 @@ removeMonster(id, bool:removeFromAlive=true)
 
 nexusDestroyed()
 {
-	server_print("Defeat!!!");
+	server_print("[%s] Defeat!!!", PLUGIN_TAG);
 	server_cmd("agabort");
 	server_exec();
 	g_GameState = GAME_DEFEAT;
@@ -3381,7 +3544,7 @@ nexusDestroyed()
 
 gameWon()
 {
-	server_print("Victory!!!");
+	server_print("[%s] Victory!!!", PLUGIN_TAG);
 	server_cmd("agabort");
 	server_exec();
 	g_GameState = GAME_VICTORY;
@@ -3573,25 +3736,71 @@ Float:nexusHealthPerRepair()
 	return get_pcvar_float(pcvar_ad_nexus_health) * 0.1;
 }
 
-bool:giveWeapon(id, const weaponName[])
+buyWeapon(id, weaponId)
 {
-	if (isSpectator(id))
+	if (!weaponId || !g_Weapons[weaponId][0])
 	{
-		client_print(id, print_chat, "[%s] Sorry, cannot buy %s while spectating.", PLUGIN_TAG, weaponName);
-		return false;
+		client_print(id, print_chat, "[%s] Sorry, the requested weapon is not for sale.", PLUGIN_TAG);
+		return;
 	}
 
-	if (!is_user_alive(id))
+	new itemName[32];
+	formatex(itemName, charsmax(itemName), g_Weapons[weaponId][7]); // remove initial "weapon_"
+
+	new Float:price, item[PURCHASABLE];
+	TrieGetArray(g_ShopItems, itemName, item, sizeof(item));
+	price = item[PURCHASABLE_PRICE];
+
+	if (g_PlayerCredits[id] >= price)
 	{
-		client_print(id, print_chat, "[%s] Sorry, you must be alive to buy %s.", PLUGIN_TAG, weaponName);
-		return false;
+		g_PlayerCredits[id] -= price;
+
+		new weapon = g_PlayerWeapons[id][weaponId];
+
+		if (!weapon)
+		{
+			weapon = give_item(id, g_Weapons[weaponId]);
+			g_PlayerWeapons[id][weaponId] = weapon;
+		}
+		else
+		{
+			new boughtAmmo	= g_WeaponInfo[weaponId][WEAPON_DEFAULT_AMMO];
+			new clipAmmo	= hl_get_weapon_ammo(weapon);
+			new bpAmmo		= hl_get_user_bpammo(id, weaponId);
+
+			//server_print("[%s] Buying %s for %dc. (boughtAmmo: %d, clipAmmo: %d, bpAmmo: %d)",
+			//	PLUGIN_TAG, g_Weapons[weaponId][7], floatround(price), boughtAmmo, clipAmmo, bpAmmo);
+
+			if (clipAmmo == g_WeaponInfo[weaponId][WEAPON_MAX_CLIP] && bpAmmo == g_WeaponInfo[weaponId][WEAPON_MAX_BPAMMO])
+			{
+				client_print(id, print_chat, "[%s] Sorry, you already have the max ammo for %s.", PLUGIN_TAG, itemName);
+				return;
+			}
+
+			if (clipAmmo != WEAPON_NOCLIP)
+			{
+				clipAmmo += boughtAmmo;
+
+				if (clipAmmo > g_WeaponInfo[weaponId][WEAPON_MAX_CLIP])
+				{
+					boughtAmmo = clipAmmo - g_WeaponInfo[weaponId][WEAPON_MAX_CLIP];
+					clipAmmo = g_WeaponInfo[weaponId][WEAPON_MAX_CLIP];
+				}
+
+				hl_set_weapon_ammo(weapon, clipAmmo);
+			}
+
+			bpAmmo += boughtAmmo;
+
+			if (bpAmmo > g_WeaponInfo[weaponId][WEAPON_MAX_BPAMMO])
+				bpAmmo = g_WeaponInfo[weaponId][WEAPON_MAX_BPAMMO];
+
+			if (boughtAmmo)
+				hl_set_user_bpammo(id, weaponId, bpAmmo);
+		}
 	}
-
-	new weapon[32];
-	formatex(weapon, charsmax(weapon), "weapon_%s", weaponName);
-	give_item(id, weapon);
-
-	return true;
+	else
+		client_print(id, print_chat, "[%s] Sorry, you need %d credits to buy a %s.", PLUGIN_TAG, floatround(price), itemName);
 }
 
 clearHUD()
@@ -4054,11 +4263,11 @@ public HandleShopMenu(id, menu, item)
 	new itemKey[32];
 	menu_item_getinfo(menu, item, _, itemKey, charsmax(itemKey));
 
-	if (equal(itemKey, "gauss"))
-		CmdBuyGauss(id);
-
-	else if (equal(itemKey, "egon"))
+	if (equal(itemKey, "egon"))
 		CmdBuyEgon(id);
+
+	else if (equal(itemKey, "gauss"))
+		CmdBuyGauss(id);
 
 	else if (equal(itemKey, "satchel"))
 		CmdBuySatchel(id);
