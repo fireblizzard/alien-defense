@@ -857,22 +857,11 @@ public plugin_init()
 	register_plugin(PLUGIN_NAME, VERSION, AUTHOR);
 	register_cvar("alien_defense_version", VERSION, FCVAR_SPONLY | FCVAR_SERVER | FCVAR_UNLOGGED);
 
-	if (!is_running("ag"))
-	{
-		new msg[256];
-		formatex(msg, charsmax(msg), "[%s] Sorry, this plugin is based on Adrenaline Gamer Mod 6.6 features to run.", PLUGIN_TAG);
-		add(msg, charsmax(msg), " It doesn't have an independent system to manage games/matches");
-		add(msg, charsmax(msg), " (like agstart/agpause/agabort/agallow commands) yet, so it's unable to run in this mod at the moment.");
-		server_print(msg);
-		pause("ad");
-		return;
-	}
-
 	new ag_gamemode[32];
 	get_cvar_string("sv_ag_gamemode", ag_gamemode, charsmax(ag_gamemode));
 	if (ag_gamemode[0] && !(equali(ag_gamemode, "aliendefense") || equali(ag_gamemode, "adf")))
 	{
-		server_print("[%s] The %s plugin can only be run in the \"adf\" gamemode.", PLUGIN_TAG, PLUGIN_NAME);
+		server_print("[%s] The %s plugin can only be run in the \"adf\" gamemode on Adrenaline Gamer 6.6 or its Mini version for HL.", PLUGIN_TAG, PLUGIN_NAME);
 		pause("ad");
 		return;
 	}
