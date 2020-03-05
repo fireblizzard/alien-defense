@@ -725,7 +725,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.9-alpha";
+new const VERSION[]					= "0.9.10-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
@@ -1284,17 +1284,15 @@ loadWaypoints()
 
 	new waypointsFilePath[256];
 	// TODO: stop hardcoding map waypoints
-	if (equali(g_Map, "ag_defense_a2", 13) || equali(g_Map, "ag_defense_a3", 13))
-		formatex(waypointsFilePath, charsmax(waypointsFilePath), "%s/%s", g_ConfigsDir, WAYPOINTS_FILENAME);
-	else
-		formatex(waypointsFilePath, charsmax(waypointsFilePath), "%s/%s", g_ConfigsDir, WAYPOINTS_A5_FILENAME);
+	new bool:isOldWaypointing = equali(g_Map, "ag_defense_a2", 13) || equali(g_Map, "ag_defense_a3", 13);
+	formatex(waypointsFilePath, charsmax(waypointsFilePath), "%s/%s", g_ConfigsDir, (isOldWaypointing ? WAYPOINTS_FILENAME : WAYPOINTS_A5_FILENAME));
+
 	new file = fopen(waypointsFilePath, "rt");
 	if (!file)
 	{
-		if (equali(g_Map, "ag_defense_a5", 13))
-			server_print("[%s] Couldn't read the %s configuration file, you need to provide a correct file for this plugin to work", PLUGIN_TAG, WAYPOINTS_A5_FILENAME);
-		else
-			server_print("[%s] Couldn't read the %s configuration file, you need to provide a correct file for this plugin to work", PLUGIN_TAG, WAYPOINTS_FILENAME);
+		if (isOldWaypointing)
+			server_print("[%s] Couldn't read the %s configuration file, you need to provide a correct file for this plugin to work",
+				PLUGIN_TAG, (isOldWaypointing ? WAYPOINTS_FILENAME : WAYPOINTS_A5_FILENAME));
 
 		pause("ad");
 		return;
