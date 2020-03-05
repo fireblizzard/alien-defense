@@ -725,7 +725,7 @@ new g_DifficultyStats[][DIFFICULTY] = {
 new const AUTHOR[]					= "naz";
 new const PLUGIN_NAME[]				= "Alien Defense";
 new const PLUGIN_TAG[]				= "AD";
-new const VERSION[]					= "0.9.8-alpha";
+new const VERSION[]					= "0.9.9-alpha";
 
 new const NEXUS_NAME[]				= "ad_nexus";
 new const WAYPOINTS_FILENAME[]		= "waypoints.ini";
